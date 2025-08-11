@@ -1,0 +1,10 @@
+name = "MLPPCVE"
+uuid = "8a8936cc-42e3-4d2a-879e-815b3b2da5cd"
+authors = ["jeffersonfparil <jeffersonparil@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+
+[compat]
+CUDA = "5.8.3"
