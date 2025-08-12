@@ -48,12 +48,12 @@ begin
     C = Costs.MSE; 
     sum(C(y, ŷ))
 end
-for i in 1:10
+for i in 1:100
     # i = 1
     FP = ForwardBackward.forwardpass(X=X, W=W, B=B, F=F)
     println("i=$i; loss=$(sum(C(y, FP["ŷ"]))/length(y))")
     BP = ForwardBackward.backpropagation(y=y, ŷ=FP["ŷ"], S=FP["weighted_sums"], A=FP["activations"], W=W, δC=δC, δF=δF); 
-    Optimisers.gradientdescent!(W, B, BP["∇W"], BP["∇B"], r=T(0.0001))
+    Optimisers.gradientdescent!(W, B, BP["∇W"], BP["∇B"], r=T(0.001))
 end
 
 function gradientdescent!(
