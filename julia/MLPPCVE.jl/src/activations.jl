@@ -69,11 +69,11 @@ f(x) = αx if x ≤ 0
 - `x`: Input value
 - `α`: Slope for negative values (default: 0.01)
 """
-function leakyrelu(x::T, α::T=0.01)::T where T <: AbstractFloat
+function leakyrelu(x::T; α::T=0.01)::T where T <: AbstractFloat
     x > 0.0 ? x : α*x
 end
 
-function leakyrelu(x::T, α::T=0.01)::T where T <: AbstractFloat
+function leakyrelu_derivative(x::T; α::T=0.01)::T where T <: AbstractFloat
     x > 0.0 ? 1.0 : α
 end
 

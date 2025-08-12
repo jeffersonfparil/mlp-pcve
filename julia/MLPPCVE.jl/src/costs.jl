@@ -22,9 +22,13 @@ function MAE_derivative(y::CuArray{T}, ŷ::CuArray{T})::CuArray{T} where T <: A
     map(x -> x < 0.0 ? 1.0 : -1.0, y - ŷ)
 end
 
-# TODO
-function HL(y::CuArray{T}, ŷ::CuArray{T}, δ::T=1e-7)::CuArray{T} where T <: AbstractFloat
-    map(x -> abs(x) <= δ ? 0.5*(x^2) : δ*(abs(x) - (0.5*δ)), y - ŷ)
+function HL(y::CuArray{T}, ŷ::CuArray{T}; δ::T=1.0)::CuArray{T} where T <: AbstractFloat
+    map(x -> abs(x) <= δ ? 0.5*(x^2) : δ*(abs(x)-(0.5*δ)), y - ŷ)
 end
+
+function HL_derivative(y::CuArray{T}, ŷ::CuArray{T}; δ::T=1.0)::CuArray{T} where T <: AbstractFloat
+    map(x -> abs(x) <= δ ? -x : -δ*sign(x), y - ŷ)
+end
+
 
 end
