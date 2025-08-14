@@ -1,7 +1,3 @@
-module Activations
-
-using CUDA
-
 """
     sigmoid(x::T)::T where T <: AbstractFloat
 
@@ -75,7 +71,4 @@ end
 
 function leakyrelu_derivative(x::T; α::T=0.01)::T where T <: AbstractFloat
     x > 0.0 ? 1.0 : α
-end
-
-
 end

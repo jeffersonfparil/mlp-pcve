@@ -1,6 +1,13 @@
 module MLPPCVE
-    
-using CUDA # Note: do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false`
+
+using Random, CUDA
+
+# TODO: 
+# - always compile CUDA with the graphics card you want to use the binary on
+# - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false;
+
+# (0) Simulation functions
+include("sim.jl")
 # (1) Activation functions
 include("activations.jl")
 # (2) Cost functions and their derivatives
@@ -9,7 +16,15 @@ include("costs.jl")
 include("forwardbackward.jl")
 # (4) Optimisers
 include("optimisers.jl")
+# (5) Training and validation
+include("traintest.jl")
 
-export Activations, Costs, ForwardBackward, Optimisers
+export simulate
+export sigmoid, sigmoid_derivative, tanh, tanh_derivative, relu, relu_derivative, leakyrelu, leakyrelu_derivative
+export MSE, MSE_derivative, MAE, MAE_derivative, HL, HL_derivative
+export init, initgradient, forwardpass, backpropagation!
+export gradientdescent!, Adam!, AdamMax!
+export train
+
 
 end
