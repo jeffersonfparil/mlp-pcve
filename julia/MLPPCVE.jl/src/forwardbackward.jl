@@ -22,30 +22,36 @@ function initgradient(W::Vector{CuArray{T, 2}})::Vector{CuArray{T, 2}} where T <
     [CuArray{T, 2}(zeros(size(x))) for x in W]
 end
 
-function forwardpass(;
+function initŷSA(
     X::CuArray{T, 2},
+    W::Vector{CuArray{T, 2}},
+)::Tuple{CuArray{T, 2}, Vector{CuArray{T, 2}}, Vector{CuArray{T, 2}}} where T <:AbstractFloat
+    _p, n = size(X)
+    n_layers = length(W)
+    ŷ = CuArray{T, 2}(zeros(1, n))
+    S = [CuArray{T, 2}(zeros(size(W[i]))) for i in 1:n_layers]
+    A = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i]))) for i in 2:n_layers])
+    (ŷ, S, A)
+end
+
+function forwardpass!(;
+    ŷ::CuArray{T, 2},
+    S::Vector{CuArray{T, 2}},
+    A::Vector{CuArray{T, 2}}, # includes the input layer (X)
     W::Vector{CuArray{T, 2}},
     b::Vector{CuArray{T, 1}},
     F::Function,
-)::Dict{String, Union{CuArray{T, 2}, Vector{CuArray{T, 2}}}} where T <:AbstractFloat
-    S::Vector{CuArray{T, 2}} = []
-    A::Vector{CuArray{T, 2}} = [X]
+)::Nothing where T <:AbstractFloat
+    # Hidden layer/s
     for i in 1:(length(W)-1)
         # i = 1
-        s = (W[i] * A[i]) .+ b[i]
-        push!(S, s)
-        push!(A, F.(s))
+        S[i] = (W[i] * A[i]) .+ b[i]
+        A[i+1] = F.(S[i])
     end
     # Output layer
-    s = (W[end] * A[end]) .+ b[end]
-    push!(S, s)
-    push!(A, s)
-    # Output
-    Dict(
-        "ŷ" => A[end], # prediction
-        "S" => S, # weighted sums
-        "A" => A[1:(end-1)], # A (excludes the input layer)
-    )
+    S[end] = (W[end] * A[end]) .+ b[end]
+    ŷ .= deepcopy(S[end])
+    nothing
 end
 
 function backpropagation!(

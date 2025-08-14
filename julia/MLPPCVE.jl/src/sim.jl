@@ -49,21 +49,15 @@ function simulate(;
         (X*β) .+ e
     elseif phen_type == "non-linear"
         p_true = p + p_unobserved
-        X_true = rand(Bool, n, p_true)
-        hs = vcat(repeat([p], l), 1); 
-        W_true::Vector{CuArray{T, 2}} = [CUDA.randn(T, hs[1], p_true)]
-        b_true::Vector{CuArray{T, 1}} = [CUDA.randn(T, hs[1])]
-        for i in 1:l
-            push!(W_true, CUDA.randn(T, hs[i+1], hs[i]))
-            push!(b_true, CUDA.randn(T, hs[i+1]))
-        end
-        FP = forwardpass(
-            X=CuArray{T, 2}(Matrix(X_true')), 
+        X_true = CuArray{T, 2}(rand(Bool, p_true, n))
+        W_true, b_true = init(X_true, n_layers=l)
+        ŷ, S, A = initŷSA(X_true, W_true)
+        forwardpass!(ŷ=ŷ, S=S, A=A,
             W=W_true, 
             b=b_true, 
             F=F
         )
-        Matrix(FP["ŷ"])[1, :]
+        Matrix(ŷ)[1, :]
     else
         throw("Please use `phen_type=\"random\"` or `phen_type=\"linear\"` or `phen_type=\"non-linear\"`")
     end
