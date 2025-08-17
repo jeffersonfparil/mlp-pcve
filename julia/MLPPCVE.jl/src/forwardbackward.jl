@@ -17,13 +17,9 @@ function init(
         push!(W, CUDA.randn(T, n_total_nodes[i+1], n_total_nodes[i]))
         push!(b, CUDA.randn(T, n_total_nodes[i+1]))
     end
-    # [size(x) for x in W]
-    # [size(x) for x in b]
     ŷ = CuArray{T, 2}(zeros(1, n))
     S = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i], 1), size(b[i], 1))) for i in 1:(n_total_layers-2)])
     A = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i], 1), size(b[i], 1))) for i in 1:(n_total_layers-2)])
-    # [size(x) for x in S]
-    # [size(x) for x in A]
     ∇W = [CuArray{T, 2}(zeros(size(x))) for x in W]
     ∇b = [CuArray{T, 1}(zeros(size(x))) for x in b]
     Network{T}(n_hidden_layers, n_hidden_nodes, W, b, ŷ, S, A, ∇W, ∇b, F, δF, C, δC)
@@ -43,20 +39,23 @@ end
 
 function backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing where T <: AbstractFloat
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X); y = CUDA.randn(1, size(X, 2))
-    # Extract the errors via chain rule including last layer up until the first hidden layer (excludes the input layer)
-    dC = Ω.δC(Ω.ŷ, y) # cost derivative at the output layer
-    # dA = Ω.δF.(Ω.S[end]) # activation derivative at the output layer
-    # ϵ = dC .* dA # error for the output layer: element-wise product of the cost derivatives and activation derivatives
-    ϵ = dC
-    Δ::Vector{CuArray{T, 2}} = [ϵ]
+    # Cost gradients with respect to (w.r.t.) the weights: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)
+    # Starting with the output layer down to the first hidden layer
+    ∂C_over_∂Aᴸ = Ω.δC(Ω.ŷ, y) # cost derivative with respect to (w.r.t.) to the activations at the output layer 
+    ∂Aˡ_over_∂Sˡ = 1.00 # activation derivative w.r.t. the sum of the weights (i.e. pre-acitvation values) at the output layer which is just 1.00 because this is a regression and not a classification network
+    ∂C_over_∂Sᴸ = ∂C_over_∂Aᴸ .* ∂Aˡ_over_∂Sˡ # error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
+    Δ::Vector{CuArray{T, 2}} = [∂C_over_∂Sᴸ]
     for i in 1:Ω.n_hidden_layers
         # i = 1
-        dC = Ω.W[end-(i-1)]' * Δ[end] # back-propagated (notice the transposed weights) cost derivative at the current layer
-        dA = Ω.δF.(Ω.S[end-i]) # activation derivative at the current layer
-        ϵ = dC .* dA # error for the current layer: element-wise product of the cost derivatives and activation derivatives
-        push!(Δ, ϵ)
+        ∂C_over_∂Aᴸ = Ω.W[end-(i-1)]' * Δ[end] # back-propagated (notice the transposed weights) cost derivative w.r.t. the activations at the current layer
+        ∂Aˡ_over_∂Sˡ = Ω.δF.(Ω.S[end-i]) # activation derivative w.r.t. the sum of the weights
+        ∂C_over_∂Sᴸ = ∂C_over_∂Aᴸ .* ∂Aˡ_over_∂Sˡ # chain rule-derived cost derivative w.r.t. the sum of the weights
+        push!(Δ, ∂C_over_∂Sᴸ)
     end
     # Calculate the gradients per layer
+    # We want ∂C/∂Wˡ = (∂C/∂Sˡ) * (∂Sˡ/∂Wˡ)
+    # where: ∂Sˡ/∂Wˡ = Aˡ⁻¹, since: Sˡ = Wˡ*Aˡ⁻¹ + bˡ
+    # Then ∂C/∂Wˡ = (∂C/∂Sˡ) * (Aˡ⁻¹)'
     Δ = reverse(Δ)
     for i in eachindex(Δ)
         # i = 2

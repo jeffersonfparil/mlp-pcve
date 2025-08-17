@@ -56,26 +56,27 @@ function splitinit!(
     (Ω_validation, Ω_training, y_validation, y_training)
 end
 
-function train()
-    T::Type = Float32
-    Xy = simulate(T=T) # It it recommended that X be standardised (μ=0, and σ=1)
-    ν::T = 0.10 # proportion of the dataset set aside for validation during training for early stopping
-    n_hidden_layers::Int64 = 2
-    n_hidden_nodes::Vector{Int64} = vcat([x * 100 for x in 1:n_hidden_layers], 1)
-    F::Function = relu
-    δF::Function = relu_derivative
-    C::Function = MSE
-    δC::Function = MSE_derivative
-    n_epochs::Int64 = 10_000
-    n_patient_epochs::Int64 = 1_000
-    optimiser::String = ["GD", "Adam", "AdamMax"][2]
-    η::T = 0.001
-    β₁ = T(0.900)
-    β₂ = T(0.999)
-    ϵ = T(1e-7)
-    t = T(0.0)
-    seed::Int64 = 42
-
+# train(simulate(), n_epochs=1_000)
+function train(
+    Xy::Dict{String, CuArray{T, 2}}; # It it recommended that X be standardised (μ=0, and σ=1)
+    ν::T = 0.10, # proportion of the dataset set aside for validation during training for early stopping
+    n_hidden_layers::Int64 = 2,
+    n_hidden_nodes::Vector{Int64} = vcat([x * 100 for x in 1:n_hidden_layers], 1),
+    F::Function = relu,
+    δF::Function = relu_derivative,
+    C::Function = MSE,
+    δC::Function = MSE_derivative,
+    n_epochs::Int64 = 10_000,
+    n_patient_epochs::Int64 = 1_000,
+    optimiser::String = ["GD", "Adam", "AdamMax"][2],
+    η::T = 0.001,
+    β₁::T = 0.900,
+    β₂::T = 0.999,
+    ϵ::T = 1e-7,
+    t::T = 0.0,
+    seed::Int64 = 42,
+)::Tuple{Network{T}, Vector{T}, Dict{String, T}} where T <: AbstractFloat
+    # T::Type = Float32; Xy = simulate(T=T); ν::T = 0.10; n_hidden_layers::Int64 = 2; n_hidden_nodes::Vector{Int64} = vcat([x * 100 for x in 1:n_hidden_layers], 1); F::Function = relu; δF::Function = relu_derivative; C::Function = MSE; δC::Function = MSE_derivative; n_epochs::Int64 = 10_000; n_patient_epochs::Int64 = 1_000; optimiser::String = ["GD", "Adam", "AdamMax"][2]; η::T = 0.001; β₁ = T(0.900); β₂ = T(0.999); ϵ = T(1e-7); t = T(0.0); seed::Int64 = 42
     # Split into validatin and training sets and initialise the networks for each as well as the target outputs
     Ω_validation, Ω_training, y_validation, y_training = splitinit!(
         Xy,
@@ -145,13 +146,9 @@ function train()
     
     # Output
     # TODO: first use a non-zero ν to find the optimum n_epochs; then using this n_epochs set ν to zero to get the final model fit using the entire dataset
-    Dict(
+    (
         "Ω" => Ω_training,
         "loss" => loss_training,
         "metrics" => metrics(Ω_training, y_training),
     )
-
-
-
-
 end
