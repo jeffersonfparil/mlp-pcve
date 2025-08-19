@@ -9,9 +9,40 @@ struct Network{T}
     ∇W::Vector{CuArray{T, 2}} # gradients of the weights
     ∇b::Vector{CuArray{T, 1}} # gradients of the biases
     F::Function # activation function
-    δF::Function # derivative of the activation function
+    ∂F::Function # derivative of the activation function
     C::Function # cost function
-    δC::Function # derivative of the cost function
+    ∂C::Function # derivative of the cost function
+end
+
+function init(
+    X::CuArray{T, 2};
+    n_hidden_layers::Int64=2,
+    n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers),
+    F::Function=relu,
+    ∂F::Function=relu_derivative,
+    C::Function=MSE,
+    ∂C::Function=MSE_derivative,
+)::Network{T} where T <: AbstractFloat
+    # X = CuArray{T, 2}(rand(Bool, 25, 1_000)); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative
+    p, n = size(X)
+    n_total_layers = 1 + n_hidden_layers + 1
+    n_total_nodes = vcat(collect(p), n_hidden_nodes, 1)
+    W = []
+    b = []
+    for i in 1:(n_total_layers-1)
+        push!(W, CUDA.randn(T, n_total_nodes[i+1], n_total_nodes[i]))
+        push!(b, CUDA.randn(T, n_total_nodes[i+1]))
+    end
+    # [size(x) for x in W]
+    # [size(x) for x in b]
+    ŷ = CuArray{T, 2}(zeros(1, n))
+    A = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i], 2), n)) for i in 2:(n_total_layers-1)])
+    # [size(x) for x in A]
+    S = vcat([CuArray{T, 2}(zeros(size(W[i], 1), size(A[i], 2))) for i in 1:(n_total_layers-1)])
+    # [size(x) for x in S]
+    ∇W = [CuArray{T, 2}(zeros(size(x))) for x in W]
+    ∇b = [CuArray{T, 1}(zeros(size(x))) for x in b]
+    Network{T}(n_hidden_layers, n_hidden_nodes, W, b, ŷ, S, A, ∇W, ∇b, F, ∂F, C, ∂C)
 end
 
 function mean(X::Matrix{T}; dims::Int64=1)::Matrix{T} where T <: AbstractFloat
@@ -67,23 +98,23 @@ function drawreplacenot(N::T, n::T)::Vector{T} where T <:Integer
 end
 
 function metrics(
-    Ω::Network{T},
+    ŷ::CuArray{T, 2},
     y::CuArray{T, 2},
 )::Dict{String, T} where T <: AbstractFloat
     # T::Type = Float32
     # Xy = simulate(T=T)
     # Ω = init(Xy["X"]); forwardpass!(Ω)
     # y = Xy["y"]
-    @assert length(Ω.ŷ) == length(y)
+    @assert length(ŷ) == length(y)
     n = length(y)
-    ϵ = Ω.ŷ .- y
+    ϵ = ŷ .- y
     mse = sum(ϵ.^2) / n
     rmse = sqrt(mse)
     mae = sum(abs.(ϵ)) / n
-    σ_ŷy = cov(Matrix(Ω.ŷ), Matrix(y), dims=2)[1,1]
-    σ_ŷ = std(Matrix(Ω.ŷ), dims=2)[1,1]
+    σ_ŷy = cov(Matrix(ŷ), Matrix(y), dims=2)[1,1]
+    σ_ŷ = std(Matrix(ŷ), dims=2)[1,1]
     σ_y = std(Matrix(y), dims=2)[1,1]
-    μ_ŷ = mean(Matrix(Ω.ŷ), dims=2)[1,1]
+    μ_ŷ = mean(Matrix(ŷ), dims=2)[1,1]
     μ_y = mean(Matrix(y), dims=2)[1,1]
     ρ = σ_ŷy / (σ_ŷ*σ_y)
     ρ_lin = (2 * ρ * σ_y * σ_ŷ) / (σ_y^2 + σ_ŷ^2 + (μ_y - μ_ŷ)^2)
@@ -110,13 +141,15 @@ function simulate(;
     F::Function = relu,
     phen_type::String = ["random", "linear", "non-linear"][3],
     normalise_X::Bool = true,
+    normalise_y::Bool = true,
     h²::Float64 = 0.75,
     p_unobserved::Int64 = 1,
 )::Dict{String, CuArray{T, 2}}
+    # seed = 42; n = 1_000; p = 10; l = 5; phen_type = "non-linear"; p_unobserved = 1; h² = 0.75; normalise_X = true; normalise_y = true
     Random.seed!(seed); CUDA.seed!(seed); 
     X = rand(Bool, n, p)
     ϕ = if phen_type == "random"
-        rand(n)
+        rand(n, 1)
     elseif phen_type == "linear"
         β = rand(p, 1)
         σ²g = var(X*β, dims=1)[1, 1]
@@ -127,12 +160,13 @@ function simulate(;
         X_true = CuArray{T, 2}(Matrix(hcat(X, rand(Bool, n, p_unobserved))'))
         Ω = init(X_true, n_hidden_layers=l, F=F)
         forwardpass!(Ω)
-        y = Matrix(Ω.ŷ)[1, :]
+        y = Matrix(Ω.ŷ')
         y ./ 10.0^(length(string(maximum(abs.(y)))))
     else
         throw("Please use `phen_type=\"random\"` or `phen_type=\"linear\"` or `phen_type=\"non-linear\"`")
     end
     X = normalise_X ? (X .- mean(T.(X), dims=1)) ./ std(T.(X), dims=1) : X
+    ϕ = normalise_y ? (ϕ .- mean(T.(ϕ), dims=1)) ./ std(T.(ϕ), dims=1) : X
     X = CuArray{T, 2}(Matrix(X'))
     y = CuArray{T, 2}(reshape(ϕ, (1, n)))
     Dict(

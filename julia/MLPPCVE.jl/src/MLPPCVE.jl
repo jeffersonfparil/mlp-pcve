@@ -19,12 +19,12 @@ include("optimisers.jl")
 # (5) Training and validation
 include("traintest.jl")
 
-export Network, mean, var, cov, std, drawreplacenot, metrics, simulate
-export sigmoid, sigmoid_derivative, tanh, tanh_derivative, relu, relu_derivative, leakyrelu, leakyrelu_derivative
+export Network, init, mean, var, cov, std, drawreplacenot, metrics, simulate
+export linear, linear_derivative, sigmoid, sigmoid_derivative, tanh, tanh_derivative, relu, relu_derivative, leakyrelu, leakyrelu_derivative
 export MSE, MSE_derivative, MAE, MAE_derivative, HL, HL_derivative
-export init, forwardpass!, backpropagation!
+export forwardpass!, backpropagation!
 export gradientdescent!, Adam!, AdamMax!
-export splitinit!, train
+export splitdata, predict, train
 
 
 end

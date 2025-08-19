@@ -1,3 +1,11 @@
+function linear(x::T)::T where T <: AbstractFloat
+    x
+end
+
+function linear_derivative(x::T)::T where T <: AbstractFloat
+    1.00
+end
+
 """
     sigmoid(x::T)::T where T <: AbstractFloat
 

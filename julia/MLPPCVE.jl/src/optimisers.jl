@@ -46,7 +46,7 @@ function AdamMax!(
     state::Dict{String, Any} = Dict(
         "β₁" => T(0.900),
         "β₂" => T(0.999),
-        "ϵ" => T(1e-7),
+        "ϵ" => T(1e-8),
         "t" => T(0.0),
         "m_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
         "v_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
