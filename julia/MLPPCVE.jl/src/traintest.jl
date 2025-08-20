@@ -56,7 +56,7 @@ function train(
     t::Float64 = 0.0,
     seed::Int64 = 42,
 )::Tuple{Network{T}, Vector{T}, Dict{String, T}} where T <: AbstractFloat
-    # Xy = simulate()
+    # Xy = simulate(n=123)
     # # Xy = simulate(phen_type="linear", h²=1.00)
     # # Xy = simulate(p_unobserved=0)
     # ν::Float64 = 0.25
@@ -66,20 +66,78 @@ function train(
     # ∂F::Function = relu_derivative
     # C::Function = MSE
     # ∂C::Function = MSE_derivative
-    # n_epochs::Int64 = 10_000
+    # n_epochs::Int64 = 100; n_batch_epochs = 1_000
     # n_patient_epochs::Int64 = 1_000
     # optimiser::String = ["GD", "Adam", "AdamMax"][2]
-    # η::Float64 = 0.0001
+    # η::Float64 = 0.001
     # β₁::Float64 = 0.900
     # β₂::Float64 = 0.999
     # ϵ::Float64 = 1e-8
     # t::Float64 = 0.0
     # seed::Int64 = 42
     # T = typeof(Matrix(Xy["y"])[1,1])
+
+
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
+    # D = splitdata(Xy, ν=Float64(ν), seed=seed)
+    # Ω = init(
+    #     D["X_training"],
+    #     n_hidden_layers=n_hidden_layers,
+    #     n_hidden_nodes=n_hidden_nodes,
+    #     F=F,
+    #     ∂F=∂F,
+    #     C=C,
+    #     ∂C=∂C,
+    # )
+    # state::Dict{String, Any} = if optimiser == "GD"
+    #     Dict()
+    # else
+    #     Dict(
+    #         "β₁" => T(β₁), "β₂" => T(β₂), "ϵ" => T(ϵ), "t" => T(t),
+    #         "m_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
+    #         "v_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
+    #         "m_b" => [CuArray{T,1}(zeros(size(x))) for x in Ω.b],
+    #         "v_b" => [CuArray{T,1}(zeros(size(x))) for x in Ω.b],
+    #     )
+    # end
+
     D = splitdata(Xy, ν=Float64(ν), seed=seed)
+    Xy = Dict("X" => D["X_training"],"y" => D["y_training"])
+    Xy_validation = Dict("X" => D["X_validation"],"y" => D["y_validation"])
+
+    n = length(Xy["y"])
+    n_batches = 5
+    batch_size = Int64(ceil(n/n_batches))
+    batch_indexes = []
+    for i in 1:n_batches
+        # i = 2
+        ini, fin = begin
+            ini = ((i-1)*batch_size)+1
+            fin = i * batch_size
+            if fin > n
+                (ini - (fin - n), n)
+            else
+                (ini, fin)
+            end
+        end
+        push!(batch_indexes, collect(ini:fin))
+    end
+
+    Ds = []
+    # idx_randomisation = drawreplacenot(n, n)
+    # Xy["X"] = Xy["X"][:, idx_randomisation]
+    # Xy["y"] = Xy["y"][:, idx_randomisation]
+    for i in 1:n_batches
+        # i = 1
+        Xy_sub = simulate(n=1)
+        Xy_sub["X"] = Xy["X"][:, batch_indexes[i]]
+        Xy_sub["y"] = Xy["y"][:, batch_indexes[i]]
+        D = splitdata(Xy_sub, ν=Float64(ν), seed=seed)
+        push!(Ds, D)
+    end
+
     Ω = init(
-        D["X_training"],
+        Ds[1]["X_training"],
         n_hidden_layers=n_hidden_layers,
         n_hidden_nodes=n_hidden_nodes,
         F=F,
@@ -98,7 +156,7 @@ function train(
             "v_b" => [CuArray{T,1}(zeros(size(x))) for x in Ω.b],
         )
     end
-    
+
     epochs::Vector{Int64} = []
     loss_training::Vector{T} = []
     loss_validation::Vector{T} = []
@@ -107,37 +165,76 @@ function train(
         # i = 1
         p = Int(round(100*i/n_epochs))
         print("\r$(repeat("█", p)) | $p% ")
-        forwardpass!(Ω)
-        backpropagation!(Ω, D["y_training"])
-        if optimiser == "GD"
-            gradientdescent!(Ω, η=T(η))
-        elseif optimiser == "Adam"
-            Adam!(Ω, η=T(η), state=state)
-        elseif optimiser == "AdamMax"
-            AdamMax!(Ω, η=T(η), state=state)
-        else
-            throw("Invalid optimiser: $optimiser")
+
+        Θ_trainings = []
+        Θ_validations = []
+        for j in 1:n_batches
+            # j = 1
+            D = Ds[j]
+            Ω.A[1] = D["X_training"]
+            for k in 1:1_000
+                forwardpass!(Ω)
+                backpropagation!(Ω, D["y_training"])
+                if optimiser == "GD"
+                    gradientdescent!(Ω, η=T(η))
+                elseif optimiser == "Adam"
+                    Adam!(Ω, η=T(η), state=state)
+                elseif optimiser == "AdamMax"
+                    AdamMax!(Ω, η=T(η), state=state)
+                else
+                    throw("Invalid optimiser: $optimiser")
+                end
+            end
+            Θ_training = metrics(Ω.ŷ, D["y_training"])
+            Θ_validation = if length(D["y_validation"]) > 0
+                metrics(predict(Ω, D["X_validation"]), D["y_validation"])
+            else
+                Dict("mse" => NaN)
+            end
+            push!(Θ_trainings, Θ_training)
+            push!(Θ_validations, Θ_validation)
         end
-        Θ_training = metrics(Ω.ŷ, D["y_training"])
-        Θ_validation = if length(D["y_validation"]) > 0
-            metrics(predict(Ω, D["X_validation"]), D["y_validation"])
-        else
-            Dict("mse" => NaN)
-        end
+        
+
+
         push!(epochs, i)
-        push!(loss_training, Θ_training["mse"])
-        push!(loss_validation, Θ_validation["mse"])
+        # push!(loss_training, Θ_training["mse"])
+        # push!(loss_validation, Θ_validation["mse"])
+        push!(loss_training, sum([x["mse"] for x in Θ_trainings]))
+        push!(loss_validation, sum([x["mse"] for x in Θ_validations]))
         # Stop early if validation loss increases or 
-        if (i > n_patient_epochs) && (Θ_validation["rmse"] > min_validation_rmse)
-            break
-        end
-        min_validation_rmse = Θ_validation["rmse"] < min_validation_rmse ? Θ_validation["rmse"] : min_validation_rmse
+        # if (i > n_patient_epochs) && (Θ_validation["rmse"] > min_validation_rmse)
+        #     break
+        # end
+        # min_validation_rmse = Θ_validation["rmse"] < min_validation_rmse ? Θ_validation["rmse"] : min_validation_rmse
     end
 
-    metrics(Ω.ŷ, D["y_training"])
-    metrics(predict(Ω, D["X_validation"]), D["y_validation"])
-    # metrics(predict(Ω, D["X_training"]), D["y_training"])
+
     # using UnicodePlots
+    metrics_training = begin
+        A = Xy["X"]
+        y = Xy["y"]
+        for i in 1:Ω.n_hidden_layers
+            # i = 1
+            A = Ω.F.((Ω.W[i] * A) .+ Ω.b[i])
+        end
+        ŷ = (Ω.W[end] * A) .+ Ω.b[end]
+        display(UnicodePlots.scatterplot(Matrix(ŷ)[1, :], Matrix(y)[1, :]))
+        metrics(ŷ, y)
+    end
+    metrics_validation = begin
+        A = Xy_validation["X"]
+        y = Xy_validation["y"]
+        for i in 1:Ω.n_hidden_layers
+            # i = 1
+            A = Ω.F.((Ω.W[i] * A) .+ Ω.b[i])
+        end
+        ŷ = (Ω.W[end] * A) .+ Ω.b[end]
+        display(UnicodePlots.scatterplot(Matrix(ŷ)[1, :], Matrix(y)[1, :]))
+        metrics(ŷ, y)
+    end
+    # metrics(predict(Ω, D["X_validation"]), D["y_validation"])
+    # metrics(predict(Ω, D["X_training"]), D["y_training"])
     UnicodePlots.scatterplot(epochs, loss_training)
     UnicodePlots.scatterplot(Matrix(Ω.ŷ)[1, :], Matrix(D["y_training"])[1, :])
     UnicodePlots.scatterplot(epochs, loss_validation)
@@ -145,11 +242,13 @@ function train(
 
     # OLS
     A = hcat(ones(size(Matrix(D["X_training"])', 1)), Matrix(D["X_training"])')
+    # A = Matrix(D["X_training"])'
     b̂ = inv(A'*A)*(A'*Matrix(D["y_training"])')
     ŷ = A * b̂
     metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_training"])
     UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_training"])[1, :])
     B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])')
+    # B = Matrix(D["X_validation"])'
     ŷ = B * b̂
     metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_validation"])
     UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_validation"])[1, :])

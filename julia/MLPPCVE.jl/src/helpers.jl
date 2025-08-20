@@ -91,7 +91,7 @@ function drawreplacenot(N::T, n::T)::Vector{T} where T <:Integer
     m = n
     while m > 0
         append!(idx, T.(ceil.(N*rand(Float64, m))))
-        idx = sort(unique(idx))
+        idx = unique(idx)
         m = n - length(idx)
     end
     idx
