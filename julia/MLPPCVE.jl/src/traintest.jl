@@ -40,15 +40,15 @@ end
 function train(
     Xy::Dict{String, CuArray{T, 2}}; # It it recommended that X be standardised (μ=0, and σ=1)
     ν::Float64 = 0.10, # proportion of the dataset set aside for validation during training for early stopping
-    n_hidden_layers::Int64 = 2,
-    n_hidden_nodes::Vector{Int64} = repeat([256], n_hidden_layers),
+    n_hidden_layers::Int64 = 3,
+    n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers),
     dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers),
     F::Function = relu,
     ∂F::Function = relu_derivative,
     C::Function = MSE,
     ∂C::Function = MSE_derivative,
     n_epochs::Int64 = 10_000,
-    n_patient_epochs::Int64 = 10,
+    n_patient_epochs::Int64 = 1_000,
     optimiser::String = ["GD", "Adam", "AdamMax"][2],
     η::Float64 = 0.001,
     β₁::Float64 = 0.900,
@@ -56,28 +56,28 @@ function train(
     ϵ::Float64 = 1e-8,
     t::Float64 = 0.0,
     seed::Int64 = 42,
-)::Tuple{Network{T}, Vector{T}, Dict{String, T}} where T <: AbstractFloat
-    Xy = simulate(seed=1)
-    # Xy = simulate(phen_type="linear", h²=1.00)
-    # Xy = simulate(p_unobserved=0)
-    ν::Float64 = 0.10
-    n_hidden_layers::Int64 = 3
-    n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
-    dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
-    F::Function = relu
-    ∂F::Function = relu_derivative
-    C::Function = MSE
-    ∂C::Function = MSE_derivative
-    n_epochs::Int64 = 10_000
-    n_patient_epochs::Int64 = 5_000
-    optimiser::String = ["GD", "Adam", "AdamMax"][2]
-    η::Float64 = 0.001
-    β₁::Float64 = 0.900
-    β₂::Float64 = 0.999
-    ϵ::Float64 = 1e-8
-    t::Float64 = 0.0
-    seed::Int64 = 42
-    T = typeof(Matrix(Xy["y"])[1,1])
+)::Dict{String, Union{Network{T}, Vector{T}, Dict{String, T}}} where T <: AbstractFloat
+    # Xy = simulate(seed=1)
+    # # Xy = simulate(phen_type="linear", h²=1.00)
+    # # Xy = simulate(n=10_000, l=1_000)
+    # ν::Float64 = 0.10
+    # n_hidden_layers::Int64 = 3
+    # n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
+    # dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
+    # F::Function = relu
+    # ∂F::Function = relu_derivative
+    # C::Function = MSE
+    # ∂C::Function = MSE_derivative
+    # n_epochs::Int64 = 10_000
+    # n_patient_epochs::Int64 = 5_000
+    # optimiser::String = ["GD", "Adam", "AdamMax"][2]
+    # η::Float64 = 0.001
+    # β₁::Float64 = 0.900
+    # β₂::Float64 = 0.999
+    # ϵ::Float64 = 1e-8
+    # t::Float64 = 0.0
+    # seed::Int64 = 42
+    # T = typeof(Matrix(Xy["y"])[1,1])
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
     D = splitdata(Xy, ν=Float64(ν), seed=seed)
     # Initialise the model using the training data only
@@ -137,38 +137,40 @@ function train(
             break
         end
     end
-    # NOTE: do not use the forward pass because it may have dropouts
-    # metrics(Ω.ŷ, D["y_training"]) 
-    metrics(predict(Ω, D["X_training"]), D["y_training"])
-    metrics(predict(Ω, D["X_validation"]), D["y_validation"])
-    # using UnicodePlots
-    UnicodePlots.scatterplot(epochs, loss_training)
-    UnicodePlots.scatterplot(Matrix(Ω.ŷ)[1, :], Matrix(D["y_training"])[1, :])
-    UnicodePlots.scatterplot(epochs, loss_validation)
-    UnicodePlots.scatterplot(Matrix(predict(Ω, D["X_validation"]))[1, :], Matrix(D["y_validation"])[1, :])
-    for i in 1:Ω.n_hidden_layers
-        println("Hidden layer $i: first column are biases and the rest are the weights")
-        display(UnicodePlots.heatmap(hcat(Vector(Ω.b[i]), Matrix(Ω.W[i]))))
-    end
+    # # NOTE: do not use the forward pass because it may have dropouts
+    # # metrics(Ω.ŷ, D["y_training"]) 
+    # metrics(predict(Ω, D["X_training"]), D["y_training"])
+    # metrics(predict(Ω, D["X_validation"]), D["y_validation"])
+    # # using UnicodePlots
+    # UnicodePlots.scatterplot(epochs, loss_training)
+    # UnicodePlots.scatterplot(Matrix(Ω.ŷ)[1, :], Matrix(D["y_training"])[1, :])
+    # UnicodePlots.scatterplot(epochs, loss_validation)
+    # UnicodePlots.scatterplot(Matrix(predict(Ω, D["X_validation"]))[1, :], Matrix(D["y_validation"])[1, :])
+    # for i in 1:Ω.n_hidden_layers
+    #     println("Hidden layer $i: first column are biases and the rest are the weights")
+    #     display(UnicodePlots.heatmap(hcat(Vector(Ω.b[i]), Matrix(Ω.W[i]))))
+    # end
 
-    # OLS
-    A = hcat(ones(size(Matrix(D["X_training"])', 1)), Matrix(D["X_training"])');
-    # A = Matrix(D["X_training"])';
-    b̂ = inv(A'*A)*(A'*Matrix(D["y_training"])');
-    ŷ = A * b̂;
-    metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_training"])
-    UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_training"])[1, :])
-    B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])');
-    # B = Matrix(D["X_validation"])';
-    ŷ = B * b̂;
-    metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_validation"])
-    UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_validation"])[1, :])
+    # # OLS
+    # A = hcat(ones(size(Matrix(D["X_training"])', 1)), Matrix(D["X_training"])');
+    # # A = Matrix(D["X_training"])';
+    # b̂ = inv(A'*A)*(A'*Matrix(D["y_training"])');
+    # ŷ = A * b̂;
+    # metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_training"])
+    # UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_training"])[1, :])
+    # B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])');
+    # # B = Matrix(D["X_validation"])';
+    # ŷ = B * b̂;
+    # metrics(CuArray{T, 2}(Matrix(ŷ')), D["y_validation"])
+    # UnicodePlots.scatterplot(ŷ[:, 1], Matrix(D["y_validation"])[1, :])
 
     # Output
     # TODO: first use a non-zero ν to find the optimum n_epochs; then using this n_epochs set ν to zero to get the final model fit using the entire dataset
-    (
+    Dict(
         "Ω" => Ω,
-        "loss" => loss_training,
-        "metrics" => metrics(Ω, y_training),
+        "loss_training" => loss_training,
+        "loss_validation" => loss_validation,
+        "metrics_training" => metrics(predict(Ω, D["X_training"]), D["y_training"]),
+        "metrics_validation" => metrics(predict(Ω, D["X_validation"]), D["y_validation"]),
     )
 end
