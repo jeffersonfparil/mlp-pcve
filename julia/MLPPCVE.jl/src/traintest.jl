@@ -42,12 +42,13 @@ function train(
     ν::Float64 = 0.10, # proportion of the dataset set aside for validation during training for early stopping
     n_hidden_layers::Int64 = 2,
     n_hidden_nodes::Vector{Int64} = repeat([256], n_hidden_layers),
+    dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers),
     F::Function = relu,
     ∂F::Function = relu_derivative,
     C::Function = MSE,
     ∂C::Function = MSE_derivative,
     n_epochs::Int64 = 10_000,
-    n_patient_epochs::Int64 = 1_000,
+    n_patient_epochs::Int64 = 10,
     optimiser::String = ["GD", "Adam", "AdamMax"][2],
     η::Float64 = 0.001,
     β₁::Float64 = 0.900,
@@ -56,36 +57,40 @@ function train(
     t::Float64 = 0.0,
     seed::Int64 = 42,
 )::Tuple{Network{T}, Vector{T}, Dict{String, T}} where T <: AbstractFloat
-    # Xy = simulate(n=20)
-    # # Xy = simulate(phen_type="linear", h²=1.00)
-    # # Xy = simulate(p_unobserved=0)
-    # ν::Float64 = 0.25
-    # n_hidden_layers::Int64 = 3
-    # n_hidden_nodes::Vector{Int64} = repeat([256], n_hidden_layers)
-    # F::Function = relu
-    # ∂F::Function = relu_derivative
-    # C::Function = MSE
-    # ∂C::Function = MSE_derivative
-    # n_epochs::Int64 = 10_000
-    # n_patient_epochs::Int64 = 1_000
-    # optimiser::String = ["GD", "Adam", "AdamMax"][2]
-    # η::Float64 = 0.001
-    # β₁::Float64 = 0.900
-    # β₂::Float64 = 0.999
-    # ϵ::Float64 = 1e-8
-    # t::Float64 = 0.0
-    # seed::Int64 = 42
-    # T = typeof(Matrix(Xy["y"])[1,1])
+    Xy = simulate(seed=1)
+    # Xy = simulate(phen_type="linear", h²=1.00)
+    # Xy = simulate(p_unobserved=0)
+    ν::Float64 = 0.10
+    n_hidden_layers::Int64 = 3
+    n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
+    dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
+    F::Function = relu
+    ∂F::Function = relu_derivative
+    C::Function = MSE
+    ∂C::Function = MSE_derivative
+    n_epochs::Int64 = 10_000
+    n_patient_epochs::Int64 = 5_000
+    optimiser::String = ["GD", "Adam", "AdamMax"][2]
+    η::Float64 = 0.001
+    β₁::Float64 = 0.900
+    β₂::Float64 = 0.999
+    ϵ::Float64 = 1e-8
+    t::Float64 = 0.0
+    seed::Int64 = 42
+    T = typeof(Matrix(Xy["y"])[1,1])
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
     D = splitdata(Xy, ν=Float64(ν), seed=seed)
+    # Initialise the model using the training data only
     Ω = init(
         D["X_training"],
         n_hidden_layers=n_hidden_layers,
         n_hidden_nodes=n_hidden_nodes,
+        dropout_rates=dropout_rates,
         F=F,
         ∂F=∂F,
         C=C,
         ∂C=∂C,
+        seed=seed,
     )
     state::Dict{String, Any} = if optimiser == "GD"
         Dict()
@@ -102,7 +107,6 @@ function train(
     epochs::Vector{Int64} = []
     loss_training::Vector{T} = []
     loss_validation::Vector{T} = []
-    min_validation_rmse = Inf
     for i in 1:n_epochs
         # i = 1
         p = Int(round(100*i/n_epochs))
@@ -118,7 +122,7 @@ function train(
         else
             throw("Invalid optimiser: $optimiser")
         end
-        Θ_training = metrics(Ω.ŷ, D["y_training"])
+        Θ_training = metrics(predict(Ω, D["X_training"]), D["y_training"]) # NOTE: do not use the forward pass because it may have dropouts
         Θ_validation = if length(D["y_validation"]) > 0
             metrics(predict(Ω, D["X_validation"]), D["y_validation"])
         else
@@ -127,20 +131,25 @@ function train(
         push!(epochs, i)
         push!(loss_training, Θ_training["mse"])
         push!(loss_validation, Θ_validation["mse"])
-        # Stop early if validation loss increases or 
-        if (i > n_patient_epochs) && (Θ_validation["rmse"] > min_validation_rmse)
+        # Stop early if validation loss does not improve within within n_patient_epochs
+        if (i >= n_patient_epochs) && ((loss_validation[end] - loss_validation[(end-n_patient_epochs)+1]) >= 0.0)
+            println("Early stopping because validation loss is not improving for the past $n_patient_epochs epochs")
             break
         end
-        min_validation_rmse = Θ_validation["rmse"] < min_validation_rmse ? Θ_validation["rmse"] : min_validation_rmse
     end
-    metrics(Ω.ŷ, D["y_training"])
+    # NOTE: do not use the forward pass because it may have dropouts
+    # metrics(Ω.ŷ, D["y_training"]) 
+    metrics(predict(Ω, D["X_training"]), D["y_training"])
     metrics(predict(Ω, D["X_validation"]), D["y_validation"])
-    # metrics(predict(Ω, D["X_training"]), D["y_training"])
     # using UnicodePlots
     UnicodePlots.scatterplot(epochs, loss_training)
     UnicodePlots.scatterplot(Matrix(Ω.ŷ)[1, :], Matrix(D["y_training"])[1, :])
     UnicodePlots.scatterplot(epochs, loss_validation)
     UnicodePlots.scatterplot(Matrix(predict(Ω, D["X_validation"]))[1, :], Matrix(D["y_validation"])[1, :])
+    for i in 1:Ω.n_hidden_layers
+        println("Hidden layer $i: first column are biases and the rest are the weights")
+        display(UnicodePlots.heatmap(hcat(Vector(Ω.b[i]), Matrix(Ω.W[i]))))
+    end
 
     # OLS
     A = hcat(ones(size(Matrix(D["X_training"])', 1)), Matrix(D["X_training"])');

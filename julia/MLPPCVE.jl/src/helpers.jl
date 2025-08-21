@@ -1,6 +1,7 @@
 struct Network{T}
     n_hidden_layers::Int64 # number of hidden layers
     n_hidden_nodes::Vector{Int64} # number of nodes per hidden layer
+    dropout_rates::Vector{T} # soft dropout rates per hidden layer
     W::Vector{CuArray{T, 2}} # weights
     b::Vector{CuArray{T, 1}} # biases
     ŷ::CuArray{T, 2} # predictions
@@ -12,37 +13,7 @@ struct Network{T}
     ∂F::Function # derivative of the activation function
     C::Function # cost function
     ∂C::Function # derivative of the cost function
-end
-
-function init(
-    X::CuArray{T, 2};
-    n_hidden_layers::Int64=2,
-    n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers),
-    F::Function=relu,
-    ∂F::Function=relu_derivative,
-    C::Function=MSE,
-    ∂C::Function=MSE_derivative,
-)::Network{T} where T <: AbstractFloat
-    # X = CuArray{T, 2}(rand(Bool, 25, 1_000)); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative
-    p, n = size(X)
-    n_total_layers = 1 + n_hidden_layers + 1
-    n_total_nodes = vcat(collect(p), n_hidden_nodes, 1)
-    W = []
-    b = []
-    for i in 1:(n_total_layers-1)
-        push!(W, CUDA.randn(T, n_total_nodes[i+1], n_total_nodes[i]))
-        push!(b, CUDA.randn(T, n_total_nodes[i+1]))
-    end
-    # [size(x) for x in W]
-    # [size(x) for x in b]
-    ŷ = CuArray{T, 2}(zeros(1, n))
-    A = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i], 2), n)) for i in 2:(n_total_layers-1)])
-    # [size(x) for x in A]
-    S = vcat([CuArray{T, 2}(zeros(size(W[i], 1), size(A[i], 2))) for i in 1:(n_total_layers-1)])
-    # [size(x) for x in S]
-    ∇W = [CuArray{T, 2}(zeros(size(x))) for x in W]
-    ∇b = [CuArray{T, 1}(zeros(size(x))) for x in b]
-    Network{T}(n_hidden_layers, n_hidden_nodes, W, b, ŷ, S, A, ∇W, ∇b, F, ∂F, C, ∂C)
+    seed::Int64 # random seed for dropouts
 end
 
 function mean(X::Matrix{T}; dims::Int64=1)::Matrix{T} where T <: AbstractFloat
@@ -97,6 +68,45 @@ function drawreplacenot(N::T, n::T)::Vector{T} where T <:Integer
     idx
 end
 
+function init(
+    X::CuArray{T, 2};
+    n_hidden_layers::Int64=2,
+    n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers),
+    dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers),
+    F::Function=relu,
+    ∂F::Function=relu_derivative,
+    C::Function=MSE,
+    ∂C::Function=MSE_derivative,
+    seed::Int64 = 42,
+)::Network{T} where T <: AbstractFloat
+    # X = CuArray{T, 2}(rand(Bool, 25, 1_000)); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
+    Random.seed!(seed)
+    p, n = size(X)
+    n_total_layers = 1 + n_hidden_layers + 1
+    n_total_nodes = vcat(collect(p), n_hidden_nodes, 1)
+    W = []
+    b = []
+    for i in 1:(n_total_layers-1)
+        # i = 1
+        n_i = n_total_nodes[i+1]
+        p_i = n_total_nodes[i]
+        # Initialise the weights as: w ~ N(0, 0.1) and all biases to zero
+        push!(W, CuArray{T, 2}(reshape(sampleNormal(n_i*p_i, μ=T(0.0), σ=T(0.1)), n_i, p_i)))
+        push!(b, CuArray{T, 1}(zeros(n_i)))
+        # UnicodePlots.histogram(reshape(Matrix(W[1]), n_i*p_i))
+    end
+    # [size(x) for x in W]
+    # [size(x) for x in b]
+    ŷ = CuArray{T, 2}(zeros(1, n))
+    A = vcat([deepcopy(X)], [CuArray{T, 2}(zeros(size(W[i], 2), n)) for i in 2:(n_total_layers-1)])
+    # [size(x) for x in A]
+    S = vcat([CuArray{T, 2}(zeros(size(W[i], 1), size(A[i], 2))) for i in 1:(n_total_layers-1)])
+    # [size(x) for x in S]
+    ∇W = [CuArray{T, 2}(zeros(size(x))) for x in W]
+    ∇b = [CuArray{T, 1}(zeros(size(x))) for x in b]
+   Ω = Network{T}(n_hidden_layers, n_hidden_nodes, T.(dropout_rates), W, b, ŷ, S, A, ∇W, ∇b, F, ∂F, C, ∂C, seed)
+end
+
 function metrics(
     ŷ::CuArray{T, 2},
     y::CuArray{T, 2},
@@ -138,6 +148,7 @@ function simulate(;
     n::Int64 = 1_000,
     p::Int64 = 10,
     l::Int64 = 5,
+    d::Float64 = 0.50,
     F::Function = relu,
     phen_type::String = ["random", "linear", "non-linear"][3],
     normalise_X::Bool = true,
@@ -145,7 +156,7 @@ function simulate(;
     h²::Float64 = 0.75,
     p_unobserved::Int64 = 1,
 )::Dict{String, CuArray{T, 2}}
-    # seed = 42; n = 1_000; p = 10; l = 5; phen_type = "non-linear"; p_unobserved = 1; h² = 0.75; normalise_X = true; normalise_y = true
+    # T=Float32; seed = 42; n = 1_000; p = 10; l = 5; d = 0.50; phen_type = "non-linear"; p_unobserved = 1; h² = 0.75; normalise_X = true; normalise_y = true; F::Function = relu
     Random.seed!(seed); CUDA.seed!(seed); 
     X = rand(Bool, n, p)
     ϕ = if phen_type == "random"
@@ -158,10 +169,14 @@ function simulate(;
         (X*β) .+ e
     elseif phen_type == "non-linear"
         X_true = CuArray{T, 2}(Matrix(hcat(X, rand(Bool, n, p_unobserved))'))
-        Ω = init(X_true, n_hidden_layers=l, F=F)
+        Ω = init(X_true, n_hidden_layers=l, F=F, dropout_rates=repeat([d], l), seed=seed)
+        for i in 1:Ω.n_hidden_layers
+            # i = 1
+            Ω.W[i] .= CUDA.randn(size(Ω.W[i], 1), size(Ω.W[i], 2))
+            Ω.b[i] .= CUDA.randn(size(Ω.b[i], 1))
+        end
         forwardpass!(Ω)
-        y = Matrix(Ω.ŷ')
-        y ./ 10.0^(length(string(maximum(abs.(y)))))
+        Matrix(Ω.ŷ')
     else
         throw("Please use `phen_type=\"random\"` or `phen_type=\"linear\"` or `phen_type=\"non-linear\"`")
     end

@@ -1,8 +1,10 @@
 function forwardpass!(Ω::Network{T})::Nothing where T <:AbstractFloat
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X)
+    Random.seed!(Ω.seed)
     for i in 1:Ω.n_hidden_layers
         # i = 1
-        Ω.S[i] .= (Ω.W[i] * Ω.A[i]) .+ Ω.b[i]
+        d = CuArray{T, 2}(CUDA.rand(size(Ω.W[i],1), 1) .> Ω.dropout_rates[i])
+        Ω.S[i] .= ((Ω.W[i] .* d) * Ω.A[i]) .+ Ω.b[i]
         Ω.A[i+1] .= Ω.F.(Ω.S[i])
     end
     Ω.S[end] .= (Ω.W[end] * Ω.A[end]) .+ Ω.b[end]
@@ -10,7 +12,7 @@ function forwardpass!(Ω::Network{T})::Nothing where T <:AbstractFloat
     nothing
 end
 
-function MLPPCVE.backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing where T <: AbstractFloat
+function backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing where T <: AbstractFloat
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X); y = CUDA.randn(1, size(X, 2))
     # Cost gradients with respect to (w.r.t.) the weights: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)
     # Starting with the output layer down to the first hidden layer
@@ -32,15 +34,17 @@ function MLPPCVE.backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing whe
     Δ = reverse(Δ)
     # [size(δ) for δ in Δ]
     # [minimum(δ) for δ in Δ]; [maximum(δ) for δ in Δ]
-    λ = T(0.01)
+    # λ = T(0.01)
     for i in eachindex(Δ)
         # i = 1
-        # Ω.∇W[i] .= (Δ[i] * Ω.A[i]') ./ length(y) # outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
-        # Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) ./ length(y) # sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
+        Ω.∇W[i] .= (Δ[i] * Ω.A[i]') # outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
+        Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) # sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
+        # Ω.∇W[i] .= (Δ[i] * Ω.A[i]') ./ length(y)
+        # Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) ./ length(y)
         # Ω.∇W[i] .= ((Δ[i] * Ω.A[i]') ./ length(y)) + (λ .* (Ω.W[i].^2))
         # Ω.∇b[i] .= (view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) ./ length(y)) + (λ .* (Ω.b[i].^2))
-        Ω.∇W[i] .= (Δ[i] * Ω.A[i]') + (λ .* (Ω.W[i].^2))
-        Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) + (λ .* (Ω.b[i].^2))
+        # Ω.∇W[i] .= (Δ[i] * Ω.A[i]') + (λ .* (Ω.W[i].^2))
+        # Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) + (λ .* (Ω.b[i].^2))
     end
     # [size(x) for x in Ω.∇W]
     # [minimum(x) for x in Ω.∇W]
