@@ -137,6 +137,10 @@ function train(
             break
         end
     end
+    # Memory clean-up
+    CUDA.reclaim()
+    CUDA.pool_status()
+
     # # NOTE: do not use the forward pass because it may have dropouts
     # # metrics(Ω.ŷ, D["y_training"]) 
     # metrics(predict(Ω, D["X_training"]), D["y_training"])
