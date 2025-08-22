@@ -20,11 +20,20 @@ include("optimisers.jl")
 include("traintest.jl")
 
 export Network, init, mean, var, cov, std, drawreplacenot, metrics, simulate
-export linear, linear_derivative, sigmoid, sigmoid_derivative, tanh, tanh_derivative, relu, relu_derivative, leakyrelu, leakyrelu_derivative
+export linear,
+    linear_derivative,
+    sigmoid,
+    sigmoid_derivative,
+    hyperbolictangent,
+    hyperbolictangent_derivative,
+    relu,
+    relu_derivative,
+    leakyrelu,
+    leakyrelu_derivative
 export MSE, MSE_derivative, MAE, MAE_derivative, HL, HL_derivative
 export forwardpass!, backpropagation!
 export gradientdescent!, Adam!, AdamMax!
-export splitdata, predict, train
+export splitdata, predict, train, optim
 
 
 end

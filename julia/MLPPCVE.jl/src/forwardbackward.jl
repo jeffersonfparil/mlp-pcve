@@ -1,9 +1,9 @@
-function forwardpass!(Ω::Network{T})::Nothing where T <:AbstractFloat
+function forwardpass!(Ω::Network{T})::Nothing where {T<:AbstractFloat}
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X)
     Random.seed!(Ω.seed)
-    for i in 1:Ω.n_hidden_layers
+    for i = 1:Ω.n_hidden_layers
         # i = 1
-        d = CuArray{T, 2}(CUDA.rand(size(Ω.W[i],1), 1) .> Ω.dropout_rates[i])
+        d = CuArray{T,2}(CUDA.rand(size(Ω.W[i], 1), 1) .> Ω.dropout_rates[i])
         Ω.S[i] .= ((Ω.W[i] .* d) * Ω.A[i]) .+ Ω.b[i]
         Ω.A[i+1] .= Ω.F.(Ω.S[i])
     end
@@ -12,15 +12,15 @@ function forwardpass!(Ω::Network{T})::Nothing where T <:AbstractFloat
     nothing
 end
 
-function backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing where T <: AbstractFloat
+function backpropagation!(Ω::Network{T}, y::CuArray{T,2})::Nothing where {T<:AbstractFloat}
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X); y = CUDA.randn(1, size(X, 2))
     # Cost gradients with respect to (w.r.t.) the weights: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)
     # Starting with the output layer down to the first hidden layer
     ∂C_over_∂Aᴸ = Ω.∂C(Ω.ŷ, y) # cost derivative with respect to (w.r.t.) to the activations at the output layer 
     ∂Aˡ_over_∂Sˡ = 1.00 # activation derivative w.r.t. the sum of the weights (i.e. pre-acitvation values) at the output layer which is just 1.00 (linear activation) because this is a regression and not a classification network
     ∂C_over_∂Sᴸ = ∂C_over_∂Aᴸ .* ∂Aˡ_over_∂Sˡ # error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
-    Δ::Vector{CuArray{T, 2}} = [∂C_over_∂Sᴸ]
-    for i in 0:(Ω.n_hidden_layers-1)
+    Δ::Vector{CuArray{T,2}} = [∂C_over_∂Sᴸ]
+    for i = 0:(Ω.n_hidden_layers-1)
         # i = 1
         ∂C_over_∂Aᴸ = Ω.W[end-i]' * Δ[end] # back-propagated (notice the transposed weights) cost derivative w.r.t. the activations at the current layer
         ∂Aˡ_over_∂Sˡ = Ω.∂F.(Ω.S[end-(i+1)]) # activation derivative w.r.t. the sum of the weights (since Ω.S[end] == Ω.ŷ then the previous pre-activations are Ω.S[end-1])
@@ -38,7 +38,7 @@ function backpropagation!(Ω::Network{T}, y::CuArray{T, 2})::Nothing where T <: 
     for i in eachindex(Δ)
         # i = 1
         Ω.∇W[i] .= (Δ[i] * Ω.A[i]') # outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
-        Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) # sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
+        Ω.∇b[i] .= view(sum(Δ[i], dims = 2), 1:size(Δ[i], 1), 1) # sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
         # Ω.∇W[i] .= (Δ[i] * Ω.A[i]') ./ length(y)
         # Ω.∇b[i] .= view(sum(Δ[i], dims=2), 1:size(Δ[i], 1), 1) ./ length(y)
         # Ω.∇W[i] .= ((Δ[i] * Ω.A[i]') ./ length(y)) + (λ .* (Ω.W[i].^2))
