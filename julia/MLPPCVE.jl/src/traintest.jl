@@ -183,10 +183,10 @@ end
 # dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25]);
 # ŷ = predict(dl_opt["Ω"], D["X_validation"]);
 # metrics(ŷ, D["y_validation"])
-# y_training = Matrix(D["y_training"])[1, :]
-# X_training = hcat(ones(size(D["X_training"], 2)), Matrix(D["X_training"])')
-# b_hat = X_training \ y_training
-# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)')
+# y_training = Matrix(D["y_training"])[1, :];
+# X_training = hcat(ones(size(D["X_training"], 2)), Matrix(D["X_training"])');
+# b_hat = X_training \ y_training;
+# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
 # metrics(y_hat, D["y_validation"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
