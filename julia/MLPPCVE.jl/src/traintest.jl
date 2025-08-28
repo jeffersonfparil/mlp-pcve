@@ -1,31 +1,32 @@
 function splitdata(
     Xy::Dict{String,CuArray{T,2}};
-    ν::Float64 = 0.10,
+    n_batches::Int64 = 10, # with the last batch used for validation
     seed::Int64 = 42,
 )::Dict{String,CuArray{T,2}} where {T<:AbstractFloat}
     # T::Type = Float32
     # Xy = simulate(T=T)
-    # ν::T = 0.10
+    # n_batches::Int64 = 10
     # seed::Int64 = 42
     Random.seed!(seed)
     p, n = size(Xy["X"])
-    n_validation, n_training = begin
-        n_validation = Int64(round(ν * n))
-        n_training = n - n_validation
-        if n_training == 0
-            (n_validation - 1, 1)
-        else
-            (n_validation, n_training)
-        end
+    if n <= n_batches
+        throw(ArgumentError("Number of samples (n=$n) must be greater than the number of batches (n_batches=$n_batches)"))
     end
-    idx_validation = drawreplacenot(n, n_validation)
-    idx_training = findall([!(x ∈ idx_validation) for x = 1:n])
-    Dict(
-        "X_training" => CuArray{T,2}(view(Xy["X"], 1:p, idx_training)),
-        "y_training" => CuArray{T,2}(view(Xy["y"], 1:1, idx_training)),
-        "X_validation" => CuArray{T,2}(view(Xy["X"], 1:p, idx_validation)),
-        "y_validation" => CuArray{T,2}(view(Xy["y"], 1:1, idx_validation)),
-    )
+    batch_size = Int64(round(n / n_batches))
+    idx_rand = shuffle(1:n)
+    out::Dict{String, CuArray{T,2}} = Dict()
+    for i in 1:n_batches
+        # i = 2
+        idx = idx_rand[((i-1)*batch_size + 1):min(i*batch_size, n)]
+        id = if i < n_batches
+            "batch_$i"
+        else
+            "validation"
+        end
+        out["X_$id"] = CuArray{T,2}(view(Xy["X"], 1:p, idx))
+        out["y_$id"] = CuArray{T,2}(view(Xy["y"], 1:1, idx))
+    end
+    out
 end
 
 function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
@@ -43,7 +44,7 @@ end
 # dl = train(simulate(n=10_000, l=100))
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
-    ν::Float64 = 0.10, # proportion of the dataset set aside for validation during training for early stopping
+    n_batches::Int64 = 10,
     n_hidden_layers::Int64 = 3,
     n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers),
     dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers),
@@ -65,7 +66,7 @@ function train(
     # Xy = simulate(seed=1)
     # # Xy = simulate(phen_type="linear", h²=1.00)
     # # Xy = simulate(n=10_000, l=1_000)
-    # ν::Float64 = 0.10
+    # n_batches::Int64 = 2
     # n_hidden_layers::Int64 = 3
     # n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
     # dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
@@ -82,12 +83,13 @@ function train(
     # ϵ::Float64 = 1e-8
     # t::Float64 = 0.0
     # seed::Int64 = 42
+    # verbose::Bool = true
     # T = typeof(Matrix(Xy["y"])[1,1])
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
-    D = splitdata(Xy, ν = Float64(ν), seed = seed)
+    D = splitdata(Xy, n_batches = n_batches, seed = seed)
     # Initialise the model using the training data only
     Ω = init(
-        D["X_training"],
+        D["X_batch_1"],
         n_hidden_layers = n_hidden_layers,
         n_hidden_nodes = n_hidden_nodes,
         dropout_rates = dropout_rates,
@@ -121,18 +123,37 @@ function train(
             p = Int(round(100 * i / n_epochs))
             print("\r$(repeat("█", p)) | $p% ")
         end
-        forwardpass!(Ω)
-        backpropagation!(Ω, D["y_training"])
-        if optimiser == "GD"
-            gradientdescent!(Ω, η = T(η))
-        elseif optimiser == "Adam"
-            Adam!(Ω, η = T(η), state = state)
-        elseif optimiser == "AdamMax"
-            AdamMax!(Ω, η = T(η), state = state)
-        else
-            throw("Invalid optimiser: $optimiser")
+        for j in 1:(n_batches - 1)
+            # j = 1
+            Ω.A[1] .= D["X_batch_$j"]
+            forwardpass!(Ω)
+            backpropagation!(Ω, D["y_batch_$j"])
+            if optimiser == "GD"
+                gradientdescent!(Ω, η = T(η))
+            elseif optimiser == "Adam"
+                Adam!(Ω, η = T(η), state = state)
+            elseif optimiser == "AdamMax"
+                AdamMax!(Ω, η = T(η), state = state)
+            else
+                throw("Invalid optimiser: $optimiser")
+            end
         end
-        Θ_training = metrics(predict(Ω, D["X_training"]), D["y_training"]) # NOTE: do not use the forward pass because it may have dropouts
+        # forwardpass!(Ω)
+        # backpropagation!(Ω, D["y_training"])
+        # if optimiser == "GD"
+        #     gradientdescent!(Ω, η = T(η))
+        # elseif optimiser == "Adam"
+        #     Adam!(Ω, η = T(η), state = state)
+        # elseif optimiser == "AdamMax"
+        #     AdamMax!(Ω, η = T(η), state = state)
+        # else
+        #     throw("Invalid optimiser: $optimiser")
+        # end
+        Θ_training = begin
+            y_true = hcat([D["y_batch_$j"] for j in 1:(n_batches - 1)]...)
+            y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j in 1:(n_batches - 1)]...)
+            metrics(y_pred, y_true) # NOTE: do not use the forward pass because it may have dropouts
+        end
         Θ_validation = if length(D["y_validation"]) > 0
             metrics(predict(Ω, D["X_validation"]), D["y_validation"])
         else
@@ -158,27 +179,34 @@ function train(
         println("")
         CUDA.pool_status()
     end
+    # DL fit
+    metrics_training = begin
+        y_true = hcat([D["y_batch_$j"] for j in 1:(n_batches - 1)]...)
+        y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j in 1:(n_batches - 1)]...)
+        metrics(y_pred, y_true) # NOTE: do not use the forward pass because it may have dropouts
+    end
+    metrics_validation = metrics(predict(Ω, D["X_validation"]), D["y_validation"])
     # Ordinary least squares fit as reference
-    A = hcat(ones(size(Matrix(D["X_training"])', 1)), Matrix(D["X_training"])')
-    b̂ = inv(A' * A) * (A' * Matrix(D["y_training"])')
+    A = hcat(ones(sum([size(D["X_batch_$i"], 2) for i in 1:(n_batches-1)])), Matrix(hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...))')
+    b̂ = inv(A' * A) * (A' * Matrix(hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))')
     ŷ_training = A * b̂
     B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])')
     ŷ_validation = B * b̂
-    metrics_training_ols = metrics(CuArray{T,2}(Matrix(ŷ_training')), D["y_training"])
+    metrics_training_ols = metrics(CuArray{T,2}(Matrix(ŷ_training')), hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))
     metrics_validation_ols = metrics(CuArray{T,2}(Matrix(ŷ_validation')), D["y_validation"])
     # Output
     Dict(
         "Ω" => Ω,
         "loss_training" => loss_training,
         "loss_validation" => loss_validation,
-        "metrics_training" => metrics(predict(Ω, D["X_training"]), D["y_training"]),
-        "metrics_validation" => metrics(predict(Ω, D["X_validation"]), D["y_validation"]),
+        "metrics_training" => metrics_training,
+        "metrics_validation" => metrics_validation,
         "metrics_training_ols" => metrics_training_ols,
         "metrics_validation_ols" => metrics_validation_ols,
     )
 end
 
-# D = splitdata(simulate(n=10_000), ν=0.25);
+# D = splitdata(simulate(n=50_000, p=500), ν=0.25);
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_training"], 1, 1:1))[1]), 2}} = Dict("X"=>D["X_training"], "y"=>D["y_training"]);
 # dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25]);
 # ŷ = predict(dl_opt["Ω"], D["X_validation"]);
@@ -288,7 +316,7 @@ function optim(
     end
     println("")
     # Fit using the best set of parameters
-    println("Fitting using the best set of parameters given the input parameter space:")
+    println("Fitting using the best set of parameters:")
     idx = findall(.!isnan.(mse) .&& (mse .== minimum(mse[.!isnan.(mse)])))[1]
     dl_opt = train(
         Xy,

@@ -380,3 +380,15 @@ function simulate(;
     y = CuArray{T,2}(reshape(ϕ, (1, n)))
     Dict("X" => X, "y" => y)
 end
+
+# function simulateyieldtrial(;
+#     T::Type = Float32,
+#     seed::Int64 = 42,
+#     n_entries::Int64 = 1_000,
+#     n_replications::Int64 = 3,
+#     n_sites::Int64 = 3,
+#     n_seasons::Int64 = 4,
+#     n_years::Int64 = 5,
+# )
+
+# end
