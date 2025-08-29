@@ -12,6 +12,9 @@ function splitdata(
     if n <= n_batches
         throw(ArgumentError("Number of samples (n=$n) must be greater than the number of batches (n_batches=$n_batches)"))
     end
+    if n < 2
+        throw(ArgumentError("Number of samples (n=$n) must be at least 2 with the first batch used for training and the second for validation"))
+    end
     batch_size = Int64(round(n / n_batches))
     idx_rand = shuffle(1:n)
     out::Dict{String, CuArray{T,2}} = Dict()
@@ -38,13 +41,15 @@ function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:Abstra
 end
 
 # dl = train(simulate())
+# dl = train(simulate(), n_batches=5)
 # dl = train(simulate(), F=leakyrelu)
-# dl = train(simulate(), F=sigmoid)
 # dl = train(simulate(), F=tanh)
-# dl = train(simulate(n=10_000, l=100))
+# dl = train(simulate(), F=sigmoid)
+# dl = train(simulate(n=50_000, p=1_000), n_batches=10)
+# dl = train(simulate(n=50_000, p=1_000), n_hidden_layers=3, dropout_rates = repeat([0.05], 3))
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
-    n_batches::Int64 = 10,
+    n_batches::Union{Int64, Nothing} = nothing, # if nothing, it will be calculated based on available GPU memory
     n_hidden_layers::Int64 = 3,
     n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers),
     dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers),
@@ -66,7 +71,7 @@ function train(
     # Xy = simulate(seed=1)
     # # Xy = simulate(phen_type="linear", h²=1.00)
     # # Xy = simulate(n=10_000, l=1_000)
-    # n_batches::Int64 = 2
+    # n_batches::Union{Int64, Nothing} = nothing
     # n_hidden_layers::Int64 = 3
     # n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
     # dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
@@ -85,7 +90,20 @@ function train(
     # seed::Int64 = 42
     # verbose::Bool = true
     # T = typeof(Matrix(Xy["y"])[1,1])
+    # Calculating the optimum number of batches based on available GPU memory
+    n_batches::Int64 = if isnothing(n_batches)
+        requirement_bytes = sum([
+            prod(size(Xy["X"])),
+            4 * sum(n_hidden_layers * n_hidden_nodes * size(Xy["X"], 2)) * (@allocated T(0.0)),
+            2 * sum(n_hidden_layers * n_hidden_nodes * (@allocated T(0.0))),
+            size(Xy["X"], 2) * (@allocated T(0.0)),
+        ])
+        maximum(vcat([2], Int64.(round.(requirement_bytes ./ CUDA.memory_info()))...))
+    else
+        n_batches
+    end
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
+    println("Using $n_batches batches (with the last batch used for validation)")
     D = splitdata(Xy, n_batches = n_batches, seed = seed)
     # Initialise the model using the training data only
     Ω = init(
@@ -113,7 +131,6 @@ function train(
             "v_b" => [CuArray{T,1}(zeros(size(x))) for x in Ω.b],
         )
     end
-
     epochs::Vector{Int64} = []
     loss_training::Vector{T} = []
     loss_validation::Vector{T} = []
@@ -125,7 +142,9 @@ function train(
         end
         for j in 1:(n_batches - 1)
             # j = 1
-            Ω.A[1] .= D["X_batch_$j"]
+            if n_batches > 2
+                Ω.A[1] .= D["X_batch_$j"]
+            end
             forwardpass!(Ω)
             backpropagation!(Ω, D["y_batch_$j"])
             if optimiser == "GD"
@@ -138,17 +157,6 @@ function train(
                 throw("Invalid optimiser: $optimiser")
             end
         end
-        # forwardpass!(Ω)
-        # backpropagation!(Ω, D["y_training"])
-        # if optimiser == "GD"
-        #     gradientdescent!(Ω, η = T(η))
-        # elseif optimiser == "Adam"
-        #     Adam!(Ω, η = T(η), state = state)
-        # elseif optimiser == "AdamMax"
-        #     AdamMax!(Ω, η = T(η), state = state)
-        # else
-        #     throw("Invalid optimiser: $optimiser")
-        # end
         Θ_training = begin
             y_true = hcat([D["y_batch_$j"] for j in 1:(n_batches - 1)]...)
             y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j in 1:(n_batches - 1)]...)
