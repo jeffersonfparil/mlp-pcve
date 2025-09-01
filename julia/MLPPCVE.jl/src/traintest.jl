@@ -50,6 +50,7 @@ end
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
     n_batches::Union{Int64, Nothing} = nothing, # if nothing, it will be calculated based on available GPU memory
+    fit_full::Bool = false, # if true, the model will be fit on the full data (no validation set)
     n_hidden_layers::Int64 = 3,
     n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers),
     dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers),
@@ -72,6 +73,7 @@ function train(
     # # Xy = simulate(phen_type="linear", h²=1.00)
     # # Xy = simulate(n=10_000, l=1_000)
     # n_batches::Union{Int64, Nothing} = nothing
+    # fit_full::Bool = true
     # n_hidden_layers::Int64 = 3
     # n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
     # dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
@@ -103,8 +105,20 @@ function train(
         n_batches
     end
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
-    println("Using $n_batches batches (with the last batch used for validation)")
-    D = splitdata(Xy, n_batches = n_batches, seed = seed)
+    D, n_batches = if !fit_full
+        println("Using $n_batches batches (with the last batch used for validation)")
+        (splitdata(Xy, n_batches = n_batches, seed = seed), n_batches)
+    else
+        println("Using $n_batches batches (to fit the model on the full data, i.e. no validation set, set fit_full=true)")
+        D = splitdata(Xy, n_batches = n_batches, seed = seed)
+        X_tmp = D["X_validation"]
+        y_tmp = D["y_validation"]
+        delete!(D, "X_validation")
+        delete!(D, "y_validation")
+        D["X_batch_$n_batches"] = X_tmp
+        D["y_batch_$n_batches"] = y_tmp
+        (D, n_batches+1)
+    end
     # Initialise the model using the training data only
     Ω = init(
         D["X_batch_1"],
@@ -143,7 +157,7 @@ function train(
         for j in 1:(n_batches - 1)
             # j = 1
             if n_batches > 2
-                Ω.A[1] .= D["X_batch_$j"]
+                Ω.A[1] .= D["X_batch_$j"] # nil cost compared to the forward pass and back-propagation below - so we are keeping the struct as is for now and here in the Julia implementation
             end
             forwardpass!(Ω)
             backpropagation!(Ω, D["y_batch_$j"])
@@ -162,7 +176,7 @@ function train(
             y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j in 1:(n_batches - 1)]...)
             metrics(y_pred, y_true) # NOTE: do not use the forward pass because it may have dropouts
         end
-        Θ_validation = if length(D["y_validation"]) > 0
+        Θ_validation = if "y_validation" ∈ keys(D)
             metrics(predict(Ω, D["X_validation"]), D["y_validation"])
         else
             Dict("mse" => NaN)
@@ -193,15 +207,25 @@ function train(
         y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j in 1:(n_batches - 1)]...)
         metrics(y_pred, y_true) # NOTE: do not use the forward pass because it may have dropouts
     end
-    metrics_validation = metrics(predict(Ω, D["X_validation"]), D["y_validation"])
+    metrics_validation =  if "y_validation" ∈ keys(D)
+        metrics(predict(Ω, D["X_validation"]), D["y_validation"])
+    else
+        Dict("mse" => NaN)
+    end
     # Ordinary least squares fit as reference
-    A = hcat(ones(sum([size(D["X_batch_$i"], 2) for i in 1:(n_batches-1)])), Matrix(hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...))')
-    b̂ = inv(A' * A) * (A' * Matrix(hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))')
-    ŷ_training = A * b̂
-    B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])')
-    ŷ_validation = B * b̂
-    metrics_training_ols = metrics(CuArray{T,2}(Matrix(ŷ_training')), hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))
-    metrics_validation_ols = metrics(CuArray{T,2}(Matrix(ŷ_validation')), D["y_validation"])
+    metrics_training_ols = begin
+        A = hcat(ones(sum([size(D["X_batch_$i"], 2) for i in 1:(n_batches-1)])), Matrix(hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...))')
+        b̂ = inv(A' * A) * (A' * Matrix(hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))')
+        ŷ_training = A * b̂
+        metrics(CuArray{T,2}(Matrix(ŷ_training')), hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...))
+    end
+    metrics_validation_ols = if "y_validation" ∈ keys(D)
+        B = hcat(ones(size(Matrix(D["X_validation"])', 1)), Matrix(D["X_validation"])')
+        ŷ_validation = B * b̂
+        metrics(CuArray{T,2}(Matrix(ŷ_validation')), D["y_validation"])
+    else
+        Dict("mse" => NaN)
+    end
     # Output
     Dict(
         "Ω" => Ω,
@@ -214,8 +238,8 @@ function train(
     )
 end
 
-# D = splitdata(simulate(n=50_000, p=500), ν=0.25);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_training"], 1, 1:1))[1]), 2}} = Dict("X"=>D["X_training"], "y"=>D["y_training"]);
+# D = splitdata(simulate(n=50_000, p=500), n_batches=10);
+# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:9]...),"y" => hcat([D["y_batch_$i"] for i in 1:9]...),);
 # dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25]);
 # ŷ = predict(dl_opt["Ω"], D["X_validation"]);
 # metrics(ŷ, D["y_validation"])
@@ -226,7 +250,7 @@ end
 # metrics(y_hat, D["y_validation"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
-    ν::Float64 = 0.10,
+    n_batches::Int64 = 10,
     opt_n_hidden_layers::Vector{Int64} = collect(1:3),
     opt_n_nodes_per_hidden_layer::Vector{Int64} = [size(Xy["X"], 1)-i for i in [0, 1]],
     opt_dropout_per_hidden_layer::Vector{Float64} = [0.0],
@@ -238,7 +262,7 @@ function optim(
     seed::Int64 = 42,
 )::Dict{String,Union{Network{T},Vector{T},Dict{String,T}}} where {T<:AbstractFloat}
     # Xy::Dict{String, CuArray{Float32, 2}} = simulate()
-    # ν::Float64 = 0.10
+    # n_batches::Int64 = 10
     # opt_n_hidden_layers::Vector{Int64} = collect(1:3)
     # opt_n_nodes_per_hidden_layer::Vector{Int64} = [size(Xy["X"], 1)-i for i in [0, 5]]
     # opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
@@ -304,7 +328,7 @@ function optim(
         # i = 1
         dl = train(
             Xy,
-            ν=ν,
+            n_batches=n_batches,
             n_hidden_layers=n_hidden_layers[i],
             n_hidden_nodes=repeat([n_nodes_per_hidden_layer[i]], n_hidden_layers[i]),
             dropout_rates=repeat([dropout_per_hidden_layer[i]], n_hidden_layers[i]),
@@ -328,7 +352,7 @@ function optim(
     idx = findall(.!isnan.(mse) .&& (mse .== minimum(mse[.!isnan.(mse)])))[1]
     dl_opt = train(
         Xy,
-        ν=0.0,
+        fit_full=true,
         n_hidden_layers=n_hidden_layers[idx],
         n_hidden_nodes=repeat([n_nodes_per_hidden_layer[idx]], n_hidden_layers[idx]),
         dropout_rates=repeat([dropout_per_hidden_layer[idx]], n_hidden_layers[idx]),
