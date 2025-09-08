@@ -321,10 +321,9 @@ function optim(
     end
     # Optimise
     P = length(n_hidden_layers)
-    # P = 10
     mse::Vector{Float64} = repeat([NaN], P)
     println("Optimising along $P sets of parameters via grid search:")
-    Threads.@threads for i in 1:P
+    for i in 1:P
         # i = 1
         dl = train(
             Xy,
@@ -380,69 +379,3 @@ function optim(
     # Output
     dl_opt
 end
-
-
-# ### Misc: LMM stuff
-# using Distributions, LinearAlgebra, MultivariateStats, UnicodePlots, Random
-# Random.seed!(42)
-# n = 1_000
-# m = 10
-# p = 100
-# h² = 0.50
-# G = begin
-#     g = rand(Normal(0.0, 1.0), p)
-#     G = g  * g'
-#     while !isposdef(G)
-#         G[diagind(G)] .+= 0.01
-#     end
-#     G
-# end
-# UnicodePlots.heatmap(G)
-# X = hcat(ones(n), rand(Bool, n, m-1))
-# β = rand(Float64, m)
-# Z = rand(Bool, n, p)
-# u = rand(MvNormal(zeros(p), G))
-# ϕ = (X * β) .+ (Z * u)
-# σ² = var(ϕ) * ((1.0 - h²) / h²)
-# R = begin
-#     R = zeros(n, n)
-#     R[diagind(R)] .= σ²
-#     R
-# end
-# ϵ = rand(MvNormal(zeros(n), R))
-# y = (X * β) .+ (Z * u) .+ ϵ
-# y = (y .- mean(y)) ./ std(y)
-# UnicodePlots.histogram(y, nbins=30, title="Phenotype distribution", xlabel="y", ylabel="Frequency")
-
-# # X = (X .- mean(X, dims=1)) ./ std(X, dims=1); X[:,1] .= 1.0
-# Z = (Z .- mean(Z, dims=1)) ./ std(Z, dims=1)
-
-# b̂_ols = begin
-#     A = hcat(X, Z)
-#     inv(A' * A) * (A' * y)
-# end
-
-# b̂_lmm, û_lmm = begin
-#     # cheating here by using the covariance matrices
-#     # R = I(n)
-#     # G = I(p)
-#     Rinv = inv(R)
-#     Ginv = inv(G)
-#     A = vcat(
-#         hcat(X'*Rinv*X, X'*Rinv*Z),
-#         hcat(Z'*Rinv*X, (Z'*Rinv*Z) .+ Ginv),
-#     )
-#     B = vcat(
-#         X'*Rinv*y,
-#         Z'*Rinv*y
-#     )
-#     x̂ = inv(A) * B
-#     (x̂[1:m], x̂[(m+1):(m+p)])
-# end
-
-# # Predict
-# ŷ_ols = hcat(X, Z) * b̂_ols
-# ŷ_lmm = (X * b̂_lmm) .+ (Z * û_lmm)
-# UnicodePlots.scatterplot(y, ŷ_ols, title="OLS predictions (corr=$(round(100.0*cor(y, ŷ_ols)))%)", xlabel="y", ylabel="ŷ", xlims=(-5, 5), ylims=(-5, 5))
-# UnicodePlots.scatterplot(y, ŷ_lmm, title="LMM predictions (corr=$(round(100.0*cor(y, ŷ_lmm)))%)", xlabel="y", ylabel="ŷ", xlims=(-5, 5), ylims=(-5, 5))
-# UnicodePlots.scatterplot(b̂_ols, vcat(b̂_lmm, û_lmm), title="OLS vs LMM estimates (corr=$(round(100.0*cor(b̂_ols, vcat(b̂_lmm, û_lmm))))%)", xlabel="b̂_ols", ylabel="b̂_lmm & û_lmm", xlims=(-3, 3), ylims=(-3, 3))
