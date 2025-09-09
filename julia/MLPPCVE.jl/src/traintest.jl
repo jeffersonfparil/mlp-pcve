@@ -106,7 +106,7 @@ function train(
     end
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
     D, n_batches = if !fit_full
-        println("Using $n_batches batches (with the last batch used for validation)")
+        verbose ? println("Using $n_batches batches (with the last batch used for validation)") : nothing
         (splitdata(Xy, n_batches = n_batches, seed = seed), n_batches)
     else
         println("Using $n_batches batches (to fit the model on the full data, i.e. no validation set, set fit_full=true)")
@@ -240,7 +240,7 @@ end
 
 # D = splitdata(simulate(n=50_000, p=500), n_batches=10);
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:9]...),"y" => hcat([D["y_batch_$i"] for i in 1:9]...),);
-# dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25]);
+# dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25], n_threads=2);
 # ŷ = predict(dl_opt["Ω"], D["X_validation"]);
 # metrics(ŷ, D["y_validation"])
 # y_training = Matrix(D["y_training"])[1, :];
@@ -259,6 +259,7 @@ function optim(
     opt_n_epochs::Vector{Int64} = [1_000, 10_000],
     opt_frac_patient_epochs::Vector{Float64} = [0.25, 0.50],
     opt_optimisers::Vector{String} = ["Adam"],
+    n_threads::Int64 = 1,
     seed::Int64 = 42,
 )::Dict{String,Union{Network{T},Vector{T},Dict{String,T}}} where {T<:AbstractFloat}
     # Xy::Dict{String, CuArray{Float32, 2}} = simulate()
@@ -271,6 +272,7 @@ function optim(
     # opt_n_epochs::Vector{Int64} = [1_000, 5_000, 10_000]
     # opt_frac_patient_epochs::Vector{Float64} = [0.25, 0.50]
     # opt_optimisers::Vector{String} = ["Adam"]
+    # n_threads::Int64 = 2
     # seed::Int64 = 42
     #
     # Sort by increasing complexity so we can jump when accuracy decreases (excluding activation and cost functions)
@@ -321,29 +323,35 @@ function optim(
     end
     # Optimise
     P = length(n_hidden_layers)
+    idx_per_thread::Vector{Vector{Int64}} = []
+    for i in 1:n_threads
+        push!(idx_per_thread, collect(i:n_threads:P))
+    end
     mse::Vector{Float64} = repeat([NaN], P)
     println("Optimising along $P sets of parameters via grid search:")
-    for i in 1:P
-        # i = 1
-        dl = train(
-            Xy,
-            n_batches=n_batches,
-            n_hidden_layers=n_hidden_layers[i],
-            n_hidden_nodes=repeat([n_nodes_per_hidden_layer[i]], n_hidden_layers[i]),
-            dropout_rates=repeat([dropout_per_hidden_layer[i]], n_hidden_layers[i]),
-            F=F[i],
-            ∂F=∂F[i],
-            C=C[i],
-            ∂C=∂C[i],
-            n_epochs=n_epochs[i],
-            n_patient_epochs=n_patient_epochs[i],
-            optimiser=optimisers[i],
-            seed=seed,
-            verbose=false,
-        )
-        mse[i] = Float64(dl["metrics_validation"]["mse"])
-        p = Int(round(100 * sum(.!isnan.(mse)) / P))
-        print("\r$(repeat("█", p)) | $p% ")
+    Threads.@threads for idx in idx_per_thread
+        for i in idx
+            # i = 1
+            dl = train(
+                Xy,
+                n_batches=n_batches,
+                n_hidden_layers=n_hidden_layers[i],
+                n_hidden_nodes=repeat([n_nodes_per_hidden_layer[i]], n_hidden_layers[i]),
+                dropout_rates=repeat([dropout_per_hidden_layer[i]], n_hidden_layers[i]),
+                F=F[i],
+                ∂F=∂F[i],
+                C=C[i],
+                ∂C=∂C[i],
+                n_epochs=n_epochs[i],
+                n_patient_epochs=n_patient_epochs[i],
+                optimiser=optimisers[i],
+                seed=seed,
+                verbose=false,
+            )
+            mse[i] = Float64(dl["metrics_validation"]["mse"])
+            p = Int(round(100 * sum(.!isnan.(mse)) / P))
+            print("\r$(repeat("█", p)) | $p% ")
+        end
     end
     println("")
     # Fit using the best set of parameters
