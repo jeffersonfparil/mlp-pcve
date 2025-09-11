@@ -278,6 +278,7 @@ function metrics(ŷ::CuArray{T,2}, y::CuArray{T,2})::Dict{String,T} where {T<:A
     # Xy = simulate(T=T)
     # Ω = init(Xy["X"]); forwardpass!(Ω)
     # y = Xy["y"]
+    # ŷ = Ω.ŷ
     @assert length(ŷ) == length(y)
     n = length(y)
     ϵ = ŷ .- y
@@ -291,6 +292,7 @@ function metrics(ŷ::CuArray{T,2}, y::CuArray{T,2})::Dict{String,T} where {T<:A
     μ_y = mean(Matrix(y), dims = 2)[1, 1]
     ρ = σ_ŷy / (σ_ŷ * σ_y)
     ρ_lin = (2 * ρ * σ_y * σ_ŷ) / (σ_y^2 + σ_ŷ^2 + (μ_y - μ_ŷ)^2)
+    R² = 1.00 - (sum(ϵ .^ 2) / sum((y .- μ_y) .^ 2))
     Dict(
         "mse" => mse,
         "rmse" => rmse,
@@ -302,6 +304,7 @@ function metrics(ŷ::CuArray{T,2}, y::CuArray{T,2})::Dict{String,T} where {T<:A
         "μ_y" => μ_y,
         "ρ" => ρ,
         "ρ_lin" => ρ_lin,
+        "R²" => R²,
     )
 end
 

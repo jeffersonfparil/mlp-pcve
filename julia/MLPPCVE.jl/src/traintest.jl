@@ -19,7 +19,7 @@ function splitdata(
     idx_rand = shuffle(1:n)
     out::Dict{String, CuArray{T,2}} = Dict()
     for i in 1:n_batches
-        # i = 2
+        # i = 1
         idx = idx_rand[((i-1)*batch_size + 1):min(i*batch_size, n)]
         id = if i < n_batches
             "batch_$i"
@@ -107,6 +107,9 @@ function train(
     # Split into validation and training sets and initialise the networks for each as well as the target outputs
     D, n_batches = if !fit_full
         verbose ? println("Using $n_batches batches (with the last batch used for validation)") : nothing
+        if n_batches < 2
+            throw(ArgumentError("Number of batches (n_batches=$n_batches) must be at least 2 with the first batch used for training and the second for validation"))
+        end
         (splitdata(Xy, n_batches = n_batches, seed = seed), n_batches)
     else
         println("Using $n_batches batches (to fit the model on the full data, i.e. no validation set, set fit_full=true)")
@@ -117,7 +120,7 @@ function train(
         delete!(D, "y_validation")
         D["X_batch_$n_batches"] = X_tmp
         D["y_batch_$n_batches"] = y_tmp
-        (D, n_batches+1)
+        (D, n_batches)
     end
     # Initialise the model using the training data only
     Ω = init(
@@ -210,7 +213,7 @@ function train(
     metrics_validation =  if "y_validation" ∈ keys(D)
         metrics(predict(Ω, D["X_validation"]), D["y_validation"])
     else
-        Dict("mse" => NaN)
+        Dict("mse" => T(NaN))
     end
     # Ordinary least squares fit as reference
     metrics_training_ols = begin
@@ -224,7 +227,7 @@ function train(
         ŷ_validation = B * b̂
         metrics(CuArray{T,2}(Matrix(ŷ_validation')), D["y_validation"])
     else
-        Dict("mse" => NaN)
+        Dict("mse" => T(NaN))
     end
     # Output
     Dict(
@@ -238,16 +241,30 @@ function train(
     )
 end
 
-# D = splitdata(simulate(n=50_000, p=500), n_batches=10);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:9]...),"y" => hcat([D["y_batch_$i"] for i in 1:9]...),);
-# dl_opt = optim(Xy, opt_n_hidden_layers=[2,3], opt_n_epochs=[10_000], opt_frac_patient_epochs=[0.25], n_threads=2);
-# ŷ = predict(dl_opt["Ω"], D["X_validation"]);
-# metrics(ŷ, D["y_validation"])
-# y_training = Matrix(D["y_training"])[1, :];
-# X_training = hcat(ones(size(D["X_training"], 2)), Matrix(D["X_training"])');
+# n_batches::Int64 = 2
+# D = splitdata(simulate(n=1_000, p=10), n_batches=n_batches);
+# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
+# dl_opt = optim(
+#     Xy, 
+#     n_batches=n_batches,
+#     opt_n_hidden_layers=collect(1:2),
+#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0, 1]],
+#     opt_dropout_per_hidden_layer=[0.0],
+#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
+#     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
+#     opt_n_epochs=[1_000, 10_000],
+#     opt_frac_patient_epochs=[0.25],
+#     opt_optimisers=["Adam"],
+#     n_threads=2,
+# )
+# ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
+# metrics_mlp = metrics(ŷ, D["y_validation"])
+# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
 # b_hat = X_training \ y_training;
 # y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-# metrics(y_hat, D["y_validation"])
+# metrics_ols = metrics(y_hat, D["y_validation"])
+# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"]) 
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
     n_batches::Int64 = 10,
@@ -261,20 +278,23 @@ function optim(
     opt_optimisers::Vector{String} = ["Adam"],
     n_threads::Int64 = 1,
     seed::Int64 = 42,
-)::Dict{String,Union{Network{T},Vector{T},Dict{String,T}}} where {T<:AbstractFloat}
+)::Dict{String, Dict{String}} where {T<:AbstractFloat}
     # Xy::Dict{String, CuArray{Float32, 2}} = simulate()
-    # n_batches::Int64 = 10
-    # opt_n_hidden_layers::Vector{Int64} = collect(1:3)
-    # opt_n_nodes_per_hidden_layer::Vector{Int64} = [size(Xy["X"], 1)-i for i in [0, 5]]
+    # n_batches::Int64 = 2
+    # opt_n_hidden_layers::Vector{Int64} = collect(1:2)
+    # opt_n_nodes_per_hidden_layer::Vector{Int64} = [size(Xy["X"], 1)-i for i in [0, 1]]
     # opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
     # opt_F_∂F::Vector{Dict{Symbol, Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
     # opt_C_∂C::Vector{Dict{Symbol, Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)]
-    # opt_n_epochs::Vector{Int64} = [1_000, 5_000, 10_000]
-    # opt_frac_patient_epochs::Vector{Float64} = [0.25, 0.50]
+    # opt_n_epochs::Vector{Int64} = [1_000, 10_000]
+    # opt_frac_patient_epochs::Vector{Float64} = [0.25]
     # opt_optimisers::Vector{String} = ["Adam"]
     # n_threads::Int64 = 2
     # seed::Int64 = 42
     #
+    if n_batches < 2
+        throw(ArgumentError("Number of batches (n_batches=$n_batches) must be at least 2 with the first batch used for training and the second for validation"))
+    end
     # Sort by increasing complexity so we can jump when accuracy decreases (excluding activation and cost functions)
     opt_n_hidden_layers = sort(opt_n_hidden_layers)
     opt_n_nodes_per_hidden_layer = sort(opt_n_nodes_per_hidden_layer)
@@ -285,16 +305,16 @@ function optim(
     opt_frac_patient_epochs = sort(opt_frac_patient_epochs)
     opt_optimisers = sort(opt_optimisers)
     # Prepare parameter space
-    n_hidden_layers::Vector{Int64} = []
-    n_nodes_per_hidden_layer::Vector{Int64} = []
-    dropout_per_hidden_layer::Vector{Float64} = []
-    F::Vector{Function} = []
-    ∂F::Vector{Function} = []
-    C::Vector{Function} = []
-    ∂C::Vector{Function} = []
-    n_epochs::Vector{Int64} = []
-    n_patient_epochs::Vector{Int64} = []
-    optimisers::Vector{String} = []
+    par_n_hidden_layers::Vector{Int64} = []
+    par_n_nodes_per_hidden_layer::Vector{Int64} = []
+    par_dropout_per_hidden_layer::Vector{Float64} = []
+    par_F::Vector{Function} = []
+    par_∂F::Vector{Function} = []
+    par_C::Vector{Function} = []
+    par_∂C::Vector{Function} = []
+    par_n_epochs::Vector{Int64} = []
+    par_n_patient_epochs::Vector{Int64} = []
+    par_optimisers::Vector{String} = []
     for i in eachindex(opt_n_hidden_layers)
         for j in eachindex(opt_n_nodes_per_hidden_layer)
             for k in eachindex(opt_dropout_per_hidden_layer)
@@ -303,16 +323,16 @@ function optim(
                         for n in eachindex(opt_n_epochs)
                             for o in eachindex(opt_frac_patient_epochs)
                                 for p in eachindex(opt_optimisers)
-                                    push!(n_hidden_layers, opt_n_hidden_layers[i])
-                                    push!(n_nodes_per_hidden_layer, opt_n_nodes_per_hidden_layer[j])
-                                    push!(dropout_per_hidden_layer, opt_dropout_per_hidden_layer[k])
-                                    push!(F, opt_F_∂F[l][:F])
-                                    push!(∂F, opt_F_∂F[l][:∂F])
-                                    push!(C, opt_C_∂C[m][:C])
-                                    push!(∂C, opt_C_∂C[m][:∂C])
-                                    push!(n_epochs, opt_n_epochs[n])
-                                    push!(n_patient_epochs, Int64(ceil(opt_frac_patient_epochs[o] * opt_n_epochs[n])))
-                                    push!(optimisers, opt_optimisers[p])
+                                    push!(par_n_hidden_layers, opt_n_hidden_layers[i])
+                                    push!(par_n_nodes_per_hidden_layer, opt_n_nodes_per_hidden_layer[j])
+                                    push!(par_dropout_per_hidden_layer, opt_dropout_per_hidden_layer[k])
+                                    push!(par_F, opt_F_∂F[l][:F])
+                                    push!(par_∂F, opt_F_∂F[l][:∂F])
+                                    push!(par_C, opt_C_∂C[m][:C])
+                                    push!(par_∂C, opt_C_∂C[m][:∂C])
+                                    push!(par_n_epochs, opt_n_epochs[n])
+                                    push!(par_n_patient_epochs, Int64(ceil(opt_frac_patient_epochs[o] * opt_n_epochs[n])))
+                                    push!(par_optimisers, opt_optimisers[p])
                                 end
                             end
                         end
@@ -322,7 +342,7 @@ function optim(
         end
     end
     # Optimise
-    P = length(n_hidden_layers)
+    P = length(par_n_hidden_layers)
     idx_per_thread::Vector{Vector{Int64}} = []
     for i in 1:n_threads
         push!(idx_per_thread, collect(i:n_threads:P))
@@ -334,17 +354,18 @@ function optim(
             # i = 1
             dl = train(
                 Xy,
+                fit_full=false,
                 n_batches=n_batches,
-                n_hidden_layers=n_hidden_layers[i],
-                n_hidden_nodes=repeat([n_nodes_per_hidden_layer[i]], n_hidden_layers[i]),
-                dropout_rates=repeat([dropout_per_hidden_layer[i]], n_hidden_layers[i]),
-                F=F[i],
-                ∂F=∂F[i],
-                C=C[i],
-                ∂C=∂C[i],
-                n_epochs=n_epochs[i],
-                n_patient_epochs=n_patient_epochs[i],
-                optimiser=optimisers[i],
+                n_hidden_layers=par_n_hidden_layers[i],
+                n_hidden_nodes=repeat([par_n_nodes_per_hidden_layer[i]], par_n_hidden_layers[i]),
+                dropout_rates=repeat([par_dropout_per_hidden_layer[i]], par_n_hidden_layers[i]),
+                F=par_F[i],
+                ∂F=par_∂F[i],
+                C=par_C[i],
+                ∂C=par_∂C[i],
+                n_epochs=par_n_epochs[i],
+                n_patient_epochs=par_n_patient_epochs[i],
+                optimiser=par_optimisers[i],
                 seed=seed,
                 verbose=false,
             )
@@ -360,16 +381,16 @@ function optim(
     dl_opt = train(
         Xy,
         fit_full=true,
-        n_hidden_layers=n_hidden_layers[idx],
-        n_hidden_nodes=repeat([n_nodes_per_hidden_layer[idx]], n_hidden_layers[idx]),
-        dropout_rates=repeat([dropout_per_hidden_layer[idx]], n_hidden_layers[idx]),
-        F=F[idx],
-        ∂F=∂F[idx],
-        C=C[idx],
-        ∂C=∂C[idx],
-        n_epochs=n_epochs[idx],
-        n_patient_epochs=n_patient_epochs[idx],
-        optimiser=optimisers[idx],
+        n_hidden_layers=par_n_hidden_layers[idx],
+        n_hidden_nodes=repeat([par_n_nodes_per_hidden_layer[idx]], par_n_hidden_layers[idx]),
+        dropout_rates=repeat([par_dropout_per_hidden_layer[idx]], par_n_hidden_layers[idx]),
+        F=par_F[idx],
+        ∂F=par_∂F[idx],
+        C=par_C[idx],
+        ∂C=par_∂C[idx],
+        n_epochs=par_n_epochs[idx],
+        n_patient_epochs=par_n_patient_epochs[idx],
+        optimiser=par_optimisers[idx],
         seed=seed,
         verbose=true,
     )
@@ -385,5 +406,20 @@ function optim(
     println("Cost function derivative: $(dl_opt["Ω"].∂C)")
     println("Randomisation seed: $(dl_opt["Ω"].seed)")
     # Output
-    dl_opt
+    Dict(
+        "Full_fit" => dl_opt,
+        "Hyperparameter_search_space" => Dict(
+            "n_hidden_layers" => par_n_hidden_layers,
+            "n_nodes_per_hidden_layer" => par_n_nodes_per_hidden_layer,
+            "dropout_per_hidden_layer" => par_dropout_per_hidden_layer,
+            "F" => par_F,
+            "∂F" => par_∂F,
+            "C" => par_C,
+            "∂C" => par_∂C,
+            "n_epochs" => par_n_epochs,
+            "n_patient_epochs" => par_n_patient_epochs,
+            "optimisers" => par_optimisers,
+            "mse" => mse,
+        )
+    )
 end
