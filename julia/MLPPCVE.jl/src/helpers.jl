@@ -141,10 +141,11 @@ Generates samples from a standard normal distribution using the Box-Muller trans
 # Returns
 - `Vector{T}`: Vector of normally distributed samples.
 """
-function sampleNormal(n::Int64; μ::T = 0.0, σ::T = 1.00)::Vector{T} where {T<:AbstractFloat}
+function sampleNormal(n::Int64; μ::T = 0.0, σ::T = 1.00, seed::Int64=42)::Vector{T} where {T<:AbstractFloat}
     # n = 100; μ = 0.0; σ = 1.0;
-    U = rand(n)
-    V = rand(n)
+    rng = Random.seed!(seed)
+    U = rand(rng, n)
+    V = rand(rng, n)
     z = sqrt.(-2.00 .* log.(U)) .* cos.(2.00 * π .* V)
     T.((z .* σ) .+ μ)
 end

@@ -19,7 +19,7 @@ include("optimisers.jl")
 # (5) Training and validation
 include("traintest.jl")
 
-export Network, init, mean, var, cov, std, drawreplacenot, metrics, simulate
+export Network, init, mean, var, cov, std, sampleNormal, drawreplacenot, metrics, simulate
 export linear,
     linear_derivative,
     sigmoid,
