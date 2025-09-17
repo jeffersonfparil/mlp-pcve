@@ -243,26 +243,27 @@ end
 
 # n_batches::Int64 = 2
 # D = splitdata(simulate(n=1_000, p=10), n_batches=n_batches);
+# # D = splitdata(simulate(n=50_000, p=100), n_batches=n_batches);
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
-# dl_opt = optim(
+# @time dl_opt = optim(
 #     Xy, 
 #     n_batches=n_batches,
-#     opt_n_hidden_layers=collect(1:2),
-#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0, 1]],
+#     opt_n_hidden_layers=collect(1:5),
+#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
 #     opt_dropout_per_hidden_layer=[0.0],
 #     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
 #     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-#     opt_n_epochs=[1_000, 10_000],
+#     opt_n_epochs=[100_000, 500_000],
 #     opt_frac_patient_epochs=[0.25],
 #     opt_optimisers=["Adam"],
 #     n_threads=2,
 # )
 # ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
-# metrics_mlp = metrics(ŷ, D["y_validation"])
 # y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
 # X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
 # b_hat = X_training \ y_training;
 # y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+# metrics_mlp = metrics(ŷ, D["y_validation"])
 # metrics_ols = metrics(y_hat, D["y_validation"])
 # (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"]) 
 function optim(
@@ -378,6 +379,18 @@ function optim(
     # Fit using the best set of parameters
     println("Fitting using the best set of parameters:")
     idx = findall(.!isnan.(mse) .&& (mse .== minimum(mse[.!isnan.(mse)])))[1]
+    println(join([
+        "\t‣ n_hidden_layers=$(par_n_hidden_layers[idx])",
+        "n_hidden_nodes=$(repeat([par_n_nodes_per_hidden_layer[idx]], par_n_hidden_layers[idx]))",
+        "dropout_rates=$(repeat([par_dropout_per_hidden_layer[idx]], par_n_hidden_layers[idx]))",
+        "F=$(string(par_F[idx]))",
+        "∂F=$(string(par_∂F[idx]))",
+        "C=$(string(par_C[idx]))",
+        "∂C=$(string(par_∂C[idx]))",
+        "n_epochs=$(par_n_epochs[idx])",
+        "n_patient_epochs=$(par_n_patient_epochs[idx])",
+        "optimiser=$(par_optimisers[idx])",
+    ], "\n\t‣ "))
     dl_opt = train(
         Xy,
         fit_full=true,
