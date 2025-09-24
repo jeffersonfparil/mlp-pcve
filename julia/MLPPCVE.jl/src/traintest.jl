@@ -93,7 +93,7 @@ function train(
     # verbose::Bool = true
     # T = typeof(Matrix(Xy["y"])[1,1])
     # Calculating the optimum number of batches based on available GPU memory
-    n_batches::Int64 = if isnothing(n_batches)
+    n_batches = if isnothing(n_batches)
         requirement_bytes = sum([
             prod(size(Xy["X"])),
             4 * sum(n_hidden_layers * n_hidden_nodes * size(Xy["X"], 2)) * (@allocated T(0.0)),
@@ -132,6 +132,7 @@ function train(
         ∂F = ∂F,
         C = C,
         ∂C = ∂C,
+        y = D["y_batch_1"], # OLS initialisation
         seed = seed,
     )
     state::Dict{String,Any} = if optimiser == "GD"
@@ -242,8 +243,7 @@ function train(
 end
 
 # n_batches::Int64 = 2
-# D = splitdata(simulate(n=1_000, p=10), n_batches=n_batches);
-# # D = splitdata(simulate(n=50_000, p=100), n_batches=n_batches);
+# D = splitdata(simulate(n=50_000, p=100), n_batches=n_batches);
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
 # @time dl_opt = optim(
 #     Xy, 
@@ -251,10 +251,10 @@ end
 #     opt_n_hidden_layers=collect(1:5),
 #     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
 #     opt_dropout_per_hidden_layer=[0.0],
-#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
+#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative)],
 #     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-#     opt_n_epochs=[100_000, 500_000],
-#     opt_frac_patient_epochs=[0.25],
+#     opt_n_epochs=[10_000, 100_000],
+#     opt_frac_patient_epochs=[0.5],
 #     opt_optimisers=["Adam"],
 #     n_threads=2,
 # )
@@ -265,7 +265,7 @@ end
 # y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
 # metrics_mlp = metrics(ŷ, D["y_validation"])
 # metrics_ols = metrics(y_hat, D["y_validation"])
-# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"]) 
+# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
     n_batches::Int64 = 10,

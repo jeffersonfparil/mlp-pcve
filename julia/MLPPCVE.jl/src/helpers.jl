@@ -190,6 +190,7 @@ Initializes a neural network with specified architecture and parameters.
 - `∂F::Function=relu_derivative`: Derivative of activation function (default: `relu_derivative`).
 - `C::Function=MSE`: Cost function (default: `MSE`).
 - `∂C::Function=MSE_derivative`: Derivative of cost function (default: `MSE_derivative`).
+- `y::Union{Nothing, CuArray{T,2}}=nothing`: Optional target values for OLS initialization.
 - `seed::Int64=42`: Random seed (default: 42).
 
 # Notes:
@@ -207,9 +208,12 @@ function init(
     ∂F::Function = relu_derivative,
     C::Function = MSE,
     ∂C::Function = MSE_derivative,
+    y::Union{Nothing, CuArray{T,2}} = nothing,
     seed::Int64 = 42,
 )::Network{T} where {T<:AbstractFloat}
-    # X = CuArray{T, 2}(rand(Bool, 25, 1_000)); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
+    # T = Float32; X = CUDA.randn(1_000, 100); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
+    # y::Union{Nothing, CuArray{T,2}} = nothing
+    # y::Union{Nothing, CuArray{T,2}} = CUDA.randn(1, 100)
     Random.seed!(seed)
     p, n = size(X)
     n_total_layers = 1 + n_hidden_layers + 1 # input layer + hidden layers + output layer
@@ -217,16 +221,21 @@ function init(
     W = []
     b = []
     for i = 1:(n_total_layers-1)
-        # i = 1
+        # i = 2
         n_i = n_total_nodes[i+1]
         p_i = n_total_nodes[i]
         # Initialise the weights as: w ~ N(0, 0.1) and all biases to zero
-        push!(
-            W,
+        w = if !isnothing(y) && (i == 1)
+            # Force the first layer to have the OLS solution
+            CuArray{T,2}(
+                reshape(repeat(inv(X*X')*(X*y')[:,1], outer=n_i), p_i, n_i)',
+            )
+        else
             CuArray{T,2}(
                 reshape(sampleNormal(n_i * p_i, μ = T(0.0), σ = T(0.1)), n_i, p_i),
-            ),
-        )
+            )
+        end
+        push!(W, w)
         push!(b, CuArray{T,1}(zeros(n_i)))
         # UnicodePlots.histogram(reshape(Matrix(W[1]), n_i*p_i))
     end
@@ -244,7 +253,7 @@ function init(
     # [size(x) for x in S]
     ∇W = [CuArray{T,2}(zeros(size(x))) for x in W]
     ∇b = [CuArray{T,1}(zeros(size(x))) for x in b]
-    Ω = Network{T}(
+    Network{T}(
         n_hidden_layers,
         n_hidden_nodes,
         T.(dropout_rates),
