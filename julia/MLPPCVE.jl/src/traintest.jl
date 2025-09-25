@@ -247,16 +247,16 @@ end
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
 # @time dl_opt = optim(
 #     Xy, 
-#     n_batches=n_batches,
+#     n_batches=1,
 #     opt_n_hidden_layers=collect(1:5),
 #     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
 #     opt_dropout_per_hidden_layer=[0.0],
 #     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative)],
 #     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-#     opt_n_epochs=[10_000, 100_000],
-#     opt_frac_patient_epochs=[0.5],
+#     opt_n_epochs=[5*size(Xy["X"], 2)],
+#     opt_frac_patient_epochs=[1.0],
 #     opt_optimisers=["Adam"],
-#     n_threads=2,
+#     n_threads=n_batches,
 # )
 # ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
 # y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
@@ -266,6 +266,30 @@ end
 # metrics_mlp = metrics(ŷ, D["y_validation"])
 # metrics_ols = metrics(y_hat, D["y_validation"])
 # (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
+#
+# # Not optimisation test
+# dl_opt = train(
+#     Xy,
+#     fit_full = true,
+#     n_hidden_layers = 5,
+#     n_hidden_nodes = repeat([size(Xy["X"], 1)], 5),
+#     dropout_rates = repeat([0.0], 5),
+#     F = relu,
+#     ∂F = relu_derivative,
+#     C = MSE,
+#     ∂C = MSE_derivative,
+#     n_epochs = 1_000_000,
+#     n_patient_epochs = 900_000,
+#     optimiser = "Adam",
+#     verbose = true,
+# )
+# ŷ = predict(dl_opt["Ω"], D["X_validation"]);
+# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
+# b_hat = X_training \ y_training;
+# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+# metrics_mlp = metrics(ŷ, D["y_validation"])
+# metrics_ols = metrics(y_hat, D["y_validation"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
     n_batches::Int64 = 10,
