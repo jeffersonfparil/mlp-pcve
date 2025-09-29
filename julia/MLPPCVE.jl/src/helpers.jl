@@ -212,6 +212,7 @@ function init(
     seed::Int64 = 42,
 )::Network{T} where {T<:AbstractFloat}
     # T = Float32; X = CUDA.randn(1_000, 100); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
+    # T = Float32; X = CUDA.randn(1_000, 100); n_hidden_layers::Int64=0; n_hidden_nodes::Vector{Int64}=repeat([0], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
     # y::Union{Nothing, CuArray{T,2}} = nothing
     # y::Union{Nothing, CuArray{T,2}} = CUDA.randn(1, 100)
     Random.seed!(seed)

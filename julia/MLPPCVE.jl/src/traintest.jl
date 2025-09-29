@@ -33,20 +33,39 @@ function splitdata(
 end
 
 function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
+    # No hidden layer (i.e. linear regression)
+    if Ω.n_hidden_layers == 0
+        return (Ω.W[end] * X) .+ Ω.b[end]
+    end
+    # With hidden layer/s
     a = Ω.F.((Ω.W[1] * X) .+ Ω.b[1])
-    for i = 2:Ω.n_hidden_layers
+    for i in 2:Ω.n_hidden_layers
         a = Ω.F.((Ω.W[i] * a) .+ Ω.b[i])
     end
     (Ω.W[end] * a) .+ Ω.b[end]
 end
 
 # dl = train(simulate())
+# dl = train(simulate(), fit_full=true)
 # dl = train(simulate(), n_batches=5)
 # dl = train(simulate(), F=leakyrelu)
 # dl = train(simulate(), F=tanh)
 # dl = train(simulate(), F=sigmoid)
 # dl = train(simulate(n=50_000, p=1_000), n_batches=10)
 # dl = train(simulate(n=50_000, p=1_000), n_hidden_layers=3, dropout_rates = repeat([0.05], 3))
+# # Compare with OLS using external validation and a big dataset
+# n_batches::Int64 = 2
+# D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=2);
+# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);=
+# dl = train(Xy, n_hidden_layers=2)
+# ŷ = predict(dl["Ω"], D["X_validation"]);
+# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
+# b_hat = X_training \ y_training;
+# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+# metrics_mlp = metrics(ŷ, D["y_validation"])
+# metrics_ols = metrics(y_hat, D["y_validation"])
+# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
     n_batches::Union{Int64, Nothing} = nothing, # if nothing, it will be calculated based on available GPU memory
@@ -59,7 +78,8 @@ function train(
     C::Function = MSE,
     ∂C::Function = MSE_derivative,
     n_epochs::Int64 = 10_000,
-    n_patient_epochs::Int64 = 1_000,
+    n_burnin_epochs::Int64 = 100,
+    n_patient_epochs::Int64 = 5,
     optimiser::String = ["GD", "Adam", "AdamMax"][2],
     η::Float64 = 0.001,
     β₁::Float64 = 0.900,
@@ -82,7 +102,8 @@ function train(
     # C::Function = MSE
     # ∂C::Function = MSE_derivative
     # n_epochs::Int64 = 10_000
-    # n_patient_epochs::Int64 = 5_000
+    # n_burnin_epochs::Int64 = 100
+    # n_patient_epochs::Int64 = 10
     # optimiser::String = ["GD", "Adam", "AdamMax"][2]
     # η::Float64 = 0.001
     # β₁::Float64 = 0.900
@@ -188,15 +209,26 @@ function train(
         push!(epochs, i)
         push!(loss_training, Θ_training["mse"])
         push!(loss_validation, Θ_validation["mse"])
-        # Stop early if validation loss does not improve within within n_patient_epochs
-        if (i >= n_patient_epochs) &&
-           ((loss_validation[end] - loss_validation[(end-n_patient_epochs)+1]) >= 0.0)
-            if verbose
-                println(
-                    "\nEarly stopping after $(length(loss_training)) epochs because validation loss is not improving for the past $n_patient_epochs epochs",
-                )
+        # After burn-in epoches: stop early if validation loss does not improve within within n_patient_epochs
+        if i > n_burnin_epochs
+            if (i >= n_patient_epochs) &&
+            ((loss_validation[end] - loss_validation[(end-n_patient_epochs)+1]) >= 0.0)
+                if verbose
+                    println(
+                        "\nEarly stopping after $(length(loss_training)) epochs because validation loss is not improving for the past $n_patient_epochs epochs",
+                    )
+                end
+                break
             end
-            break
+            if (i >= n_patient_epochs) &&
+            ((loss_training[end] - loss_training[(end-n_patient_epochs)+1]) >= 0.0)
+                if verbose
+                    println(
+                        "\nEarly stopping after $(length(loss_training)) epochs because training loss is not improving for the past $n_patient_epochs epochs",
+                    )
+                end
+                break
+            end
         end
     end
     # Memory clean-up
@@ -242,54 +274,31 @@ function train(
     )
 end
 
-# n_batches::Int64 = 2
-# D = splitdata(simulate(n=50_000, p=100), n_batches=n_batches);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
-# @time dl_opt = optim(
-#     Xy, 
-#     n_batches=1,
-#     opt_n_hidden_layers=collect(1:5),
-#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
-#     opt_dropout_per_hidden_layer=[0.0],
-#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative)],
-#     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-#     opt_n_epochs=[5*size(Xy["X"], 2)],
-#     opt_frac_patient_epochs=[1.0],
-#     opt_optimisers=["Adam"],
-#     n_threads=n_batches,
-# )
-# ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
-# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
-# b_hat = X_training \ y_training;
-# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-# metrics_mlp = metrics(ŷ, D["y_validation"])
-# metrics_ols = metrics(y_hat, D["y_validation"])
-# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
-#
-# # Not optimisation test
-# dl_opt = train(
-#     Xy,
-#     fit_full = true,
-#     n_hidden_layers = 5,
-#     n_hidden_nodes = repeat([size(Xy["X"], 1)], 5),
-#     dropout_rates = repeat([0.0], 5),
-#     F = relu,
-#     ∂F = relu_derivative,
-#     C = MSE,
-#     ∂C = MSE_derivative,
-#     n_epochs = 1_000_000,
-#     n_patient_epochs = 900_000,
-#     optimiser = "Adam",
-#     verbose = true,
-# )
-# ŷ = predict(dl_opt["Ω"], D["X_validation"]);
-# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
-# b_hat = X_training \ y_training;
-# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-# metrics_mlp = metrics(ŷ, D["y_validation"])
-# metrics_ols = metrics(y_hat, D["y_validation"])
+n_batches::Int64 = 2
+D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=n_batches);
+Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
+@time dl_opt = optim(
+    Xy, 
+    n_batches=n_batches,
+    opt_n_hidden_layers=collect(1:5),
+    opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
+    opt_dropout_per_hidden_layer=[0.0],
+    opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
+    opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
+    opt_n_epochs=[10_000],
+    opt_n_burnin_epochs=[100],
+    opt_n_patient_epochs=[5, 10],
+    opt_optimisers=["Adam"],
+    n_threads=n_batches,
+)
+ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
+y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
+b_hat = X_training \ y_training;
+y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+metrics_mlp = metrics(ŷ, D["y_validation"])
+metrics_ols = metrics(y_hat, D["y_validation"])
+(metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
     n_batches::Int64 = 10,
@@ -299,7 +308,8 @@ function optim(
     opt_F_∂F::Vector{Dict{Symbol, Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
     opt_C_∂C::Vector{Dict{Symbol, Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)],
     opt_n_epochs::Vector{Int64} = [1_000, 10_000],
-    opt_frac_patient_epochs::Vector{Float64} = [0.25, 0.50],
+    opt_n_burnin_epochs::Vector{Int64} = [100],
+    opt_n_patient_epochs::Vector{Int64} = [5],
     opt_optimisers::Vector{String} = ["Adam"],
     n_threads::Int64 = 1,
     seed::Int64 = 42,
@@ -312,7 +322,8 @@ function optim(
     # opt_F_∂F::Vector{Dict{Symbol, Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
     # opt_C_∂C::Vector{Dict{Symbol, Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)]
     # opt_n_epochs::Vector{Int64} = [1_000, 10_000]
-    # opt_frac_patient_epochs::Vector{Float64} = [0.25]
+    # opt_n_burnin_epochs::Vector{Int64} = [100]
+    # opt_n_patient_epochs::Vector{Float64} = [5]
     # opt_optimisers::Vector{String} = ["Adam"]
     # n_threads::Int64 = 2
     # seed::Int64 = 42
@@ -327,7 +338,7 @@ function optim(
     # opt_F_∂F = sort(opt_F_∂F)
     # opt_C_∂C = sort(opt_C_∂C)
     opt_n_epochs = sort(opt_n_epochs)
-    opt_frac_patient_epochs = sort(opt_frac_patient_epochs)
+    opt_n_patient_epochs = sort(opt_n_patient_epochs)
     opt_optimisers = sort(opt_optimisers)
     # Prepare parameter space
     par_n_hidden_layers::Vector{Int64} = []
@@ -338,6 +349,7 @@ function optim(
     par_C::Vector{Function} = []
     par_∂C::Vector{Function} = []
     par_n_epochs::Vector{Int64} = []
+    par_n_burnin_epochs::Vector{Int64} = []
     par_n_patient_epochs::Vector{Int64} = []
     par_optimisers::Vector{String} = []
     for i in eachindex(opt_n_hidden_layers)
@@ -346,18 +358,21 @@ function optim(
                 for l in eachindex(opt_F_∂F)
                     for m in eachindex(opt_C_∂C)
                         for n in eachindex(opt_n_epochs)
-                            for o in eachindex(opt_frac_patient_epochs)
-                                for p in eachindex(opt_optimisers)
-                                    push!(par_n_hidden_layers, opt_n_hidden_layers[i])
-                                    push!(par_n_nodes_per_hidden_layer, opt_n_nodes_per_hidden_layer[j])
-                                    push!(par_dropout_per_hidden_layer, opt_dropout_per_hidden_layer[k])
-                                    push!(par_F, opt_F_∂F[l][:F])
-                                    push!(par_∂F, opt_F_∂F[l][:∂F])
-                                    push!(par_C, opt_C_∂C[m][:C])
-                                    push!(par_∂C, opt_C_∂C[m][:∂C])
-                                    push!(par_n_epochs, opt_n_epochs[n])
-                                    push!(par_n_patient_epochs, Int64(ceil(opt_frac_patient_epochs[o] * opt_n_epochs[n])))
-                                    push!(par_optimisers, opt_optimisers[p])
+                            for o in eachindex(opt_n_patient_epochs)
+                                for p in eachindex(opt_n_burnin_epochs)
+                                    for q in eachindex(opt_optimisers)
+                                        push!(par_n_hidden_layers, opt_n_hidden_layers[i])
+                                        push!(par_n_nodes_per_hidden_layer, opt_n_nodes_per_hidden_layer[j])
+                                        push!(par_dropout_per_hidden_layer, opt_dropout_per_hidden_layer[k])
+                                        push!(par_F, opt_F_∂F[l][:F])
+                                        push!(par_∂F, opt_F_∂F[l][:∂F])
+                                        push!(par_C, opt_C_∂C[m][:C])
+                                        push!(par_∂C, opt_C_∂C[m][:∂C])
+                                        push!(par_n_epochs, opt_n_epochs[n])
+                                        push!(par_n_patient_epochs, opt_n_patient_epochs[o])
+                                        push!(par_n_patient_epochs, opt_n_burnin_epochs[p])
+                                        push!(par_optimisers, opt_optimisers[q])
+                                    end
                                 end
                             end
                         end
@@ -389,6 +404,7 @@ function optim(
                 C=par_C[i],
                 ∂C=par_∂C[i],
                 n_epochs=par_n_epochs[i],
+                n_burnin_epochs=par_n_burnin_epochs[i],
                 n_patient_epochs=par_n_patient_epochs[i],
                 optimiser=par_optimisers[i],
                 seed=seed,
@@ -412,6 +428,7 @@ function optim(
         "C=$(string(par_C[idx]))",
         "∂C=$(string(par_∂C[idx]))",
         "n_epochs=$(par_n_epochs[idx])",
+        "n_burnin_epochs=$(par_n_patient_epochs[idx])",
         "n_patient_epochs=$(par_n_patient_epochs[idx])",
         "optimiser=$(par_optimisers[idx])",
     ], "\n\t‣ "))
@@ -426,6 +443,7 @@ function optim(
         C=par_C[idx],
         ∂C=par_∂C[idx],
         n_epochs=par_n_epochs[idx],
+        n_burnin_epochs=par_n_burnin_epochs[idx],
         n_patient_epochs=par_n_patient_epochs[idx],
         optimiser=par_optimisers[idx],
         seed=seed,
