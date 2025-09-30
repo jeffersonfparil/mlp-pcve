@@ -274,31 +274,31 @@ function train(
     )
 end
 
-n_batches::Int64 = 2
-D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=n_batches);
-Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
-@time dl_opt = optim(
-    Xy, 
-    n_batches=n_batches,
-    opt_n_hidden_layers=collect(1:5),
-    opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
-    opt_dropout_per_hidden_layer=[0.0],
-    opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
-    opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-    opt_n_epochs=[10_000],
-    opt_n_burnin_epochs=[100],
-    opt_n_patient_epochs=[5, 10],
-    opt_optimisers=["Adam"],
-    n_threads=n_batches,
-)
-ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
-y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...))
-b_hat = X_training \ y_training;
-y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-metrics_mlp = metrics(ŷ, D["y_validation"])
-metrics_ols = metrics(y_hat, D["y_validation"])
-(metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
+# n_batches::Int64 = 2
+# D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=n_batches);
+# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
+# @time dl_opt = optim(
+#     Xy, 
+#     n_batches=n_batches,
+#     opt_n_hidden_layers=collect(0:5),
+#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
+#     opt_dropout_per_hidden_layer=[0.0],
+#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
+#     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
+#     opt_n_epochs=[10_000],
+#     opt_n_burnin_epochs=[100, 1_000],
+#     opt_n_patient_epochs=[5, 10],
+#     opt_optimisers=["Adam"],
+#     n_threads=n_batches,
+# )
+# ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
+# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
+# b_hat = X_training \ y_training;
+# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+# metrics_mlp = metrics(ŷ, D["y_validation"])
+# metrics_ols = metrics(y_hat, D["y_validation"])
+# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
 function optim(
     Xy::Dict{String, CuArray{T, 2}};
     n_batches::Int64 = 10,
@@ -370,7 +370,7 @@ function optim(
                                         push!(par_∂C, opt_C_∂C[m][:∂C])
                                         push!(par_n_epochs, opt_n_epochs[n])
                                         push!(par_n_patient_epochs, opt_n_patient_epochs[o])
-                                        push!(par_n_patient_epochs, opt_n_burnin_epochs[p])
+                                        push!(par_n_burnin_epochs, opt_n_burnin_epochs[p])
                                         push!(par_optimisers, opt_optimisers[q])
                                     end
                                 end
@@ -387,6 +387,7 @@ function optim(
     for i in 1:n_threads
         push!(idx_per_thread, collect(i:n_threads:P))
     end
+    actual_n_epochs::Vector{Int64} = repeat([0], P)
     mse::Vector{Float64} = repeat([NaN], P)
     println("Optimising along $P sets of parameters via grid search:")
     Threads.@threads for idx in idx_per_thread
@@ -410,6 +411,7 @@ function optim(
                 seed=seed,
                 verbose=false,
             )
+            actual_n_epochs[i] = length(dl["loss_training"])
             mse[i] = Float64(dl["metrics_validation"]["mse"])
             p = Int(round(100 * sum(.!isnan.(mse)) / P))
             print("\r$(repeat("█", p)) | $p% ")
@@ -427,8 +429,8 @@ function optim(
         "∂F=$(string(par_∂F[idx]))",
         "C=$(string(par_C[idx]))",
         "∂C=$(string(par_∂C[idx]))",
-        "n_epochs=$(par_n_epochs[idx])",
-        "n_burnin_epochs=$(par_n_patient_epochs[idx])",
+        "n_epochs=$(actual_n_epochs[idx])", # using actual number of epochs used from the optimisation step
+        "n_burnin_epochs=$(par_n_burnin_epochs[idx])",
         "n_patient_epochs=$(par_n_patient_epochs[idx])",
         "optimiser=$(par_optimisers[idx])",
     ], "\n\t‣ "))
@@ -442,7 +444,7 @@ function optim(
         ∂F=par_∂F[idx],
         C=par_C[idx],
         ∂C=par_∂C[idx],
-        n_epochs=par_n_epochs[idx],
+        n_epochs=actual_n_epochs[idx], # using actual number of epochs used from the optimisation step
         n_burnin_epochs=par_n_burnin_epochs[idx],
         n_patient_epochs=par_n_patient_epochs[idx],
         optimiser=par_optimisers[idx],
@@ -450,6 +452,8 @@ function optim(
         verbose=true,
     )
     println("Total number of epochs ran: $(length(dl_opt["loss_training"]))")
+    println("Number of burn-in epochs ran: $(par_n_burnin_epochs[idx])")
+    println("Number of patient epochs used for early-stopping: $(par_n_patient_epochs[idx])")
     println("Hidden layers: $(dl_opt["Ω"].n_hidden_layers)")
     println("Nodes per hidden layer: $(dl_opt["Ω"].n_hidden_nodes)")
     println("Dropout rates per hidden layer: $(dl_opt["Ω"].dropout_rates)")
