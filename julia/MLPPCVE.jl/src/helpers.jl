@@ -141,7 +141,12 @@ Generates samples from a standard normal distribution using the Box-Muller trans
 # Returns
 - `Vector{T}`: Vector of normally distributed samples.
 """
-function sampleNormal(n::Int64; μ::T = 0.0, σ::T = 1.00, seed::Int64=42)::Vector{T} where {T<:AbstractFloat}
+function sampleNormal(
+    n::Int64;
+    μ::T = 0.0,
+    σ::T = 1.00,
+    seed::Int64 = 42,
+)::Vector{T} where {T<:AbstractFloat}
     # n = 100; μ = 0.0; σ = 1.0;
     rng = Random.seed!(seed)
     U = rand(rng, n)
@@ -208,7 +213,7 @@ function init(
     ∂F::Function = relu_derivative,
     C::Function = MSE,
     ∂C::Function = MSE_derivative,
-    y::Union{Nothing, CuArray{T,2}} = nothing,
+    y::Union{Nothing,CuArray{T,2}} = nothing,
     seed::Int64 = 42,
 )::Network{T} where {T<:AbstractFloat}
     # T = Float32; X = CUDA.randn(1_000, 100); n_hidden_layers::Int64=2; n_hidden_nodes::Vector{Int64}=repeat([256], n_hidden_layers); dropout_rates::Vector{Float64}=repeat([0.0], n_hidden_layers); F::Function=relu; ∂F::Function=relu_derivative; C::Function=MSE; ∂C::Function=MSE_derivative; seed::Int64 = 42
@@ -228,13 +233,9 @@ function init(
         # Initialise the weights as: w ~ N(0, 0.1) and all biases to zero
         w = if !isnothing(y) && (i == 1)
             # Force the first layer to have the OLS solution
-            CuArray{T,2}(
-                reshape(repeat(inv(X*X')*(X*y')[:,1], outer=n_i), p_i, n_i)',
-            )
+            CuArray{T,2}(reshape(repeat(inv(X * X') * (X*y')[:, 1], outer = n_i), p_i, n_i)')
         else
-            CuArray{T,2}(
-                reshape(sampleNormal(n_i * p_i, μ = T(0.0), σ = T(0.1)), n_i, p_i),
-            )
+            CuArray{T,2}(reshape(sampleNormal(n_i * p_i, μ = T(0.0), σ = T(0.1)), n_i, p_i))
         end
         push!(W, w)
         push!(b, CuArray{T,1}(zeros(n_i)))
