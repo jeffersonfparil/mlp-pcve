@@ -5,10 +5,12 @@ version = "0.1.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 CUDA = "5.8.3"
+LinearAlgebra = "1.11.0"
 Random = "1.11.0"
 julia = "1.11"
 

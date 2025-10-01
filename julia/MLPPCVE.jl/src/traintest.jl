@@ -64,7 +64,7 @@ end
 # # Compare with OLS using external validation and a big dataset
 # n_batches::Int64 = 2
 # D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=2);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);=
+# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
 # dl = train(Xy, n_hidden_layers=2)
 # ŷ = predict(dl["Ω"], D["X_validation"]);
 # y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
@@ -102,7 +102,7 @@ function train(
     # # Xy = simulate(n=10_000, l=1_000)
     # n_batches::Union{Int64, Nothing} = nothing
     # fit_full::Bool = true
-    # n_hidden_layers::Int64 = 3
+    # n_hidden_layers::Int64 = 1
     # n_hidden_nodes::Vector{Int64} = repeat([size(Xy["X"], 1)], n_hidden_layers)
     # dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers)
     # F::Function = relu
@@ -121,6 +121,14 @@ function train(
     # seed::Int64 = 42
     # verbose::Bool = true
     # T = typeof(Matrix(Xy["y"])[1,1])
+    # Check inputs
+    if size(Xy["X"], 2) != size(Xy["y"], 2)
+        throw(
+            ArgumentError(
+                "Number of samples in X ($(size(Xy["X"], 2))) must be equal to the number of samples in y ($(size(Xy["y"], 2)))",
+            ),
+        )
+    end
     # Calculating the optimum number of batches based on available GPU memory
     n_batches = if isnothing(n_batches)
         requirement_bytes = sum([
@@ -272,8 +280,11 @@ function train(
             ones(sum([size(D["X_batch_$i"], 2) for i = 1:(n_batches-1)])),
             Matrix(hcat([D["X_batch_$i"] for i = 1:(n_batches-1)]...))',
         )
-        b̂ =
+        b̂ = try
             inv(A' * A) * (A' * Matrix(hcat([D["y_batch_$i"] for i = 1:(n_batches-1)]...))')
+        catch
+            pinv(A' * A) * (A' * Matrix(hcat([D["y_batch_$i"] for i = 1:(n_batches-1)]...))')
+        end
         ŷ_training = A * b̂
         metrics(
             CuArray{T,2}(Matrix(ŷ_training')),
@@ -300,7 +311,7 @@ function train(
 end
 
 # n_batches::Int64 = 2
-# D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=n_batches);
+# D = splitdata(simulate(n=62_123, p=197, l=5), n_batches=n_batches);
 # Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
 # @time dl_opt = optim(
 #     Xy, 

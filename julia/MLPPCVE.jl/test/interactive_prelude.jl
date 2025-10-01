@@ -6,4 +6,4 @@ Pkg.activate(".")
 #     nothing
 # end
 using MLPPCVE
-using CUDA, Random
+using CUDA, LinearAlgebra, Random
