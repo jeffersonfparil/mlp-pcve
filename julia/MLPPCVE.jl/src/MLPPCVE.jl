@@ -39,8 +39,8 @@ export forwardpass!, backpropagation!
 export gradientdescent!, Adam!, AdamMax!
 export splitdata, predict, train, optim
 
-function main()
-    fname = writetrial(simulatetrial(verbose=false))
+function (@main)(ARGS)
+        fname = writetrial(simulatetrial(verbose=false))
     delimiter::Union{Char, String} = ','
     expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     T::Type = Float32
@@ -109,7 +109,7 @@ function main()
         )
         @show dl_optim["Full_fit"]["metrics_training"]
     end
-    nothing
+    return nothing
 end
 
 end

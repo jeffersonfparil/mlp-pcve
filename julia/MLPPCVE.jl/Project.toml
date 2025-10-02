@@ -21,3 +21,6 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
+
+[apps]
+MLPPCVE = {Multi-layer perceptrons for phenotype and covariance estimation. Notes: (1) currently cannot compile via JuliaC because of errors on CUDA.jl. (2) Planning to implement on Zig. Why not Rust? I would like to have more control and less hidden magic.}
