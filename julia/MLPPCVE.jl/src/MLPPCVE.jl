@@ -3,8 +3,12 @@ module MLPPCVE
 using Random, LinearAlgebra, CUDA
 
 # TODO: 
+# Make this more portable, i.e. allowing use of CPU or any type of GPU available in the system
+# Current attempt at portability using PackageCompiler.jl:
 # - always compile CUDA with the graphics card you want to use the binary on
+# - compile: `using PackageCompiler; create_app("MLPPCVE.jl/", "test")`
 # - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false;
+# - test run using simulated data (i.e. no arguments): ` ./test/bin/MLPPCVE`
 
 # (0) Helper functions
 include("helpers.jl")
@@ -39,13 +43,29 @@ export forwardpass!, backpropagation!
 export gradientdescent!, Adam!, AdamMax!
 export splitdata, predict, train, optim
 
-function (@main)(ARGS)
+# Testing
+function julia_main()::Cint
+    # ARGS is implicit?!
+    fname, delimiter, max_layers, n_batches = if length(ARGS) == 0
+        println("No arguments provided, running a simulated trial with default parameters.")
         fname = writetrial(simulatetrial(verbose=false))
-    delimiter::Union{Char, String} = ','
-    expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
+        delimiter = ","
+        max_layers = 3
+        n_batches = 2
+        (fname, delimiter, max_layers, n_batches)
+    else
+        if length(ARGS) < 4
+            error("Not enough arguments provided. Provide: (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
+        end
+        fname = ARGS[1]
+        delimiter = ARGS[2]
+        max_layers = parse(Int64, ARGS[3])
+        n_batches = parse(Int64, ARGS[4])
+        (fname, delimiter, max_layers, n_batches)
+    end
     T::Type = Float32
-    n_batches::Int64 = 2
-    opt_n_hidden_layers::Vector{Int64} = collect(0:5)
+    expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
+    opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
     opt_n_nodes_per_hidden_layer::Vector{Int64} = [128, 256]
     opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
     opt_F_∂F::Vector{Dict{Symbol,Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
@@ -109,7 +129,7 @@ function (@main)(ARGS)
         )
         @show dl_optim["Full_fit"]["metrics_training"]
     end
-    return nothing
+    return 0
 end
 
 end
