@@ -89,6 +89,18 @@ pub fn build(b: *std.Build) void {
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
 
+    // Point to cudaz dependency
+    const cudaz_dep = b.dependency("cudaz", .{});
+
+    // Fetch and add the module from cudaz dependency
+    const cudaz_module = cudaz_dep.module("cudaz");
+    exe.root_module.addImport("cudaz", cudaz_module);
+
+    // Dynamically link to libc, cuda, nvrtc
+    exe.linkLibC();
+    exe.linkSystemLibrary("cuda");
+    exe.linkSystemLibrary("nvrtc");
+
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
     // This will evaluate the `run` step rather than the default step.
