@@ -6,9 +6,9 @@ using Random, LinearAlgebra, CUDA
 # Make this more portable, i.e. allowing use of CPU or any type of GPU available in the system
 # Current attempt at portability using PackageCompiler.jl:
 # - always compile CUDA with the graphics card you want to use the binary on
-# - compile: `using PackageCompiler; create_app("MLPPCVE.jl/", "test")`
-# - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false``
-# - test run using simulated data (i.e. no arguments): ` ./test/bin/MLPPCVE`
+# - compile: `using PackageCompiler; create_app("MLPPCVE.jl/", "mlppcve-bin")`
+# - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false`
+# - test run - no arguments show help docs: `./mlppcve-bin/bin/MLPPCVE`
 
 # (0) Helper functions
 include("helpers.jl")
@@ -44,25 +44,40 @@ export gradientdescent!, Adam!, AdamMax!
 export splitdata, predict, train, optim
 
 # Testing
-function julia_main()::Cint
+function args_parser()
     # ARGS is implicit?!
-    # fname, delimiter, max_layers, n_batches = if length(ARGS) == 0
-        println("No arguments provided, running a simulated trial with default parameters.")
+    if length(ARGS) == 0 || ARGS[1] == "--help" || ARGS[1] == "-h" || ARGS[1] == "help" || ARGS[1] == "h"
+        println("Usage: ./mlppcve-bin/bin/MLPPCVE (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
+        println("Example: ./mlppcve-bin/bin/MLPPCVE simulated_trial_data.csv , 1 2")
+        exit(0)
+    elseif ARGS[1] == "--example" || ARGS[1] == "example"
+        println("Analysing a simulated trial with default parameters, i.e. max_layers=3 and n_batches=2.")
         fname = writetrial(simulatetrial(verbose=false))
         delimiter = ","
         max_layers = 3
         n_batches = 2
-    #     (fname, delimiter, max_layers, n_batches)
-    # else
-    #     if length(ARGS) < 4
-    #         error("Not enough arguments provided. Provide: (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
-    #     end
-    #     fname = ARGS[1]
-    #     delimiter = ARGS[2]
-    #     max_layers = parse(Int64, ARGS[3])
-    #     n_batches = parse(Int64, ARGS[4])
-    #     (fname, delimiter, max_layers, n_batches)
-    # end
+        (fname, delimiter, max_layers, n_batches)
+    elseif length(ARGS) == 4
+        fname = ARGS[1]
+        delimiter = ARGS[2]
+        max_layers = parse(Int64, ARGS[3])
+        n_batches = parse(Int64, ARGS[4])
+        (fname, delimiter, max_layers, n_batches)
+    else
+        println("Incorrect number of arguments provided. Provide: (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
+        println("Example: ./mlppcve-bin/bin/MLPPCVE simulated_trial_data.csv , 3 2")
+        exit(1)
+    end
+end
+
+function julia_main()::Cint
+    
+    
+    # TODO: a more ergonomic parser? Or just make it as simple no need for another external library?
+    # TODO: output results to a file or fixed_explanatory_variables
+
+    # Parse arguments
+    fname, delimiter, max_layers, n_batches = args_parser()
     T::Type = Float32
     expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
@@ -78,8 +93,7 @@ function julia_main()::Cint
     seed::Int64 = 42
     verbose::Bool = true
 
-
-
+    # Read the trial data
     trial = readtrial(fname=fname, delimiter=delimiter, expected_labels_A=expected_labels_A)
     # Remove fixed explanatory variables
     nonfixed_explanatory_variables = String[]
