@@ -74,10 +74,10 @@ function julia_main()::Cint
     
     
     # TODO: a more ergonomic parser? Or just make it as simple no need for another external library?
-    # TODO: output results to a file or fixed_explanatory_variables
-
+    
     # Parse arguments
     fname, delimiter, max_layers, n_batches = args_parser()
+    # fname, delimiter, max_layers, n_batches = (writetrial(simulatetrial(verbose=false)), ",", 3, 2)
     T::Type = Float32
     expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
@@ -114,18 +114,13 @@ function julia_main()::Cint
         "X" => CuArray(T.(trial.X[:, idx]')), 
         "y" => CuArray(T.(trial.Y[:, 1]')),
     )
-    labels_X_nonfixed = trial.labels_X[idx]
     for (j, trait) in enumerate(trial.labels_Y)
-        # j = 2; trait = trial.labels_Y[j]
+        # j = 1; trait = trial.labels_Y[j]
         if verbose
             println("Fitting trait ($j or $(length(trial.labels_Y))): $trait")
         end
         Xy["y"] = CuArray(T.(trial.Y[:, j]'))
-        dl = train(Xy, n_hidden_layers=1, n_batches=n_batches, seed=seed, verbose=verbose)
-        @show dl["metrics_training"]
-        @show dl["metrics_training_ols"]
-        @show dl["metrics_validation"]
-        @show dl["metrics_validation_ols"]
+        
         dl_optim = optim(
             Xy,
             n_batches=n_batches,
@@ -142,6 +137,69 @@ function julia_main()::Cint
             seed=seed,
         )
         @show dl_optim["Full_fit"]["metrics_training"]
+        @show dl_optim["Full_fit"]["metrics_training_ols"]
+        
+        # # Extract predictions
+        # y = dl_optim["Full_fit"]["y_true"]
+        # y_hat = dl_optim["Full_fit"]["y_pred"]
+        # metrics(CuArray(y_hat'), CuArray(y'))
+   
+        # Extract uncontextualised effects
+        ϕ_nocotext::Vector{T} = []
+        ϕ_nocotext_labels::Vector{String} = []
+        x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
+        for explanatory_variable in nonfixed_explanatory_variables
+            # explanatory_variable = nonfixed_explanatory_variables[2]
+            idx = findall(.!isnothing.(match.(Regex("^$explanatory_variable"), trial.labels_X)))
+            for i in idx
+                # i = idx[1]
+                x_new .= 0.0
+                x_new[i, :] .= 1.0
+                push!(ϕ_nocotext, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
+                push!(ϕ_nocotext_labels, trial.labels_X[i])
+            end
+        end
+        ϕ_nocotext_proportion = ϕ_nocotext ./ sum(abs.(ϕ_nocotext))
+        Φ_nocotext_proportion = hcat(ϕ_nocotext_labels, string.(ϕ_nocotext), string.(ϕ_nocotext_proportion))
+        # idx = findall(.!isnothing.(match.(Regex("entries"), ϕ_nocotext_labels)))
+        # minimum(ϕ_nocotext[idx])
+        # maximum(ϕ_nocotext[idx])
+        # hcat(ϕ_nocotext_labels[idx], string.(ϕ_nocotext[idx]), string.(ϕ_nocotext_proportion[idx]))
+        
+
+        # TODO: Extract contextualised effects
+        requested_contextualised_effects = ["seasons-entries", "sites-entries", "seasons-sites-entries"]
+        ϕ_context::Vector{T} = []
+        ϕ_context_labels::Vector{String} = []
+        for contextualised_effect in requested_contextualised_effects
+            # contextualised_effect = requested_contextualised_effects[3]
+            factors = String.(split(contextualised_effect, '-'))
+            idx_factors = [findall(.!isnothing.(match.(Regex("^$factor"), trial.labels_X))) for factor in factors]
+            idx_combinations = collect(Iterators.product(idx_factors...))
+            x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
+            for idx_combination in idx_combinations
+                # idx_combination = idx_combinations[1]
+                x_new .= 0.0
+                for i in collect(idx_combination)
+                    x_new[i, :] .= 1.0
+                end
+                push!(ϕ_context, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
+                push!(ϕ_context_labels, join(trial.labels_X[collect(idx_combination)], '-'))
+            end
+        end
+        ϕ_context_proportion = ϕ_context ./ sum(abs.(ϕ_context))
+        Φ_context_proportion = hcat(ϕ_context_labels, string.(ϕ_context), string.(ϕ_context_proportion))
+        
+        Dict(
+            "dl_optim" => dl_optim,
+            "ϕ_nocotext" => ϕ_nocotext,
+            "ϕ_nocotext_labels" => ϕ_nocotext_labels,
+            "ϕ_context" => ϕ_context,
+            "ϕ_context_labels" => ϕ_context_labels,
+        )
+        
+
+
     end
     return 0
 end

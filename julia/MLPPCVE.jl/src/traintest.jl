@@ -54,26 +54,12 @@ function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:Abstra
 end
 
 # dl = train(simulate())
+# dl = train(simulate(), n_hidden_layers=2)
 # dl = train(simulate(), fit_full=true)
 # dl = train(simulate(), n_batches=5)
 # dl = train(simulate(), F=leakyrelu)
 # dl = train(simulate(), F=tanh)
 # dl = train(simulate(), F=sigmoid)
-# dl = train(simulate(n=50_000, p=1_000), n_batches=10)
-# dl = train(simulate(n=50_000, p=1_000), n_hidden_layers=3, dropout_rates = repeat([0.05], 3))
-# # Compare with OLS using external validation and a big dataset
-# n_batches::Int64 = 2
-# D = splitdata(simulate(n=50_000, p=100, l=5), n_batches=2);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
-# dl = train(Xy, n_hidden_layers=2)
-# ŷ = predict(dl["Ω"], D["X_validation"]);
-# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
-# b_hat = X_training \ y_training;
-# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-# metrics_mlp = metrics(ŷ, D["y_validation"])
-# metrics_ols = metrics(y_hat, D["y_validation"])
-# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
     n_batches::Union{Int64,Nothing} = nothing, # if nothing, it will be calculated based on available GPU memory
@@ -167,7 +153,7 @@ function train(
         delete!(D, "y_validation")
         D["X_batch_$n_batches"] = X_tmp
         D["y_batch_$n_batches"] = y_tmp
-        (D, n_batches)
+        (D, n_batches+1)
     end
     # Initialise the model using the training data only
     Ω = init(
@@ -222,11 +208,11 @@ function train(
                 throw("Invalid optimiser: $optimiser")
             end
         end
-        Θ_training = begin
-            y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
-            y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j = 1:(n_batches-1)]...)
-            metrics(y_pred, y_true) # NOTE: do not use the forward pass because it may have dropouts
-        end
+        # Metrics for the training and validations sets
+        # NOTE: do not use the forward pass because it may have dropouts
+        y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
+        y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j = 1:(n_batches-1)]...)
+        Θ_training = metrics(y_pred, y_true) 
         Θ_validation = if "y_validation" ∈ keys(D)
             metrics(predict(Ω, D["X_validation"]), D["y_validation"])
         else
@@ -301,6 +287,8 @@ function train(
     # Output
     Dict(
         "Ω" => Ω,
+        "y_true" => Vector(y_true[1, :]),
+        "y_pred" => Vector(y_pred[1, :]),
         "loss_training" => loss_training,
         "loss_validation" => loss_validation,
         "metrics_training" => metrics_training,
