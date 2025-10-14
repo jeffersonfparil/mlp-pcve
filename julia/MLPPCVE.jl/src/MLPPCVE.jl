@@ -86,11 +86,12 @@ function julia_main()::Cint
     opt_F_∂F::Vector{Dict{Symbol,Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
     opt_C_∂C::Vector{Dict{Symbol,Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)]
     opt_n_epochs::Vector{Int64} = [10_000]
-    opt_n_burnin_epochs::Vector{Int64} = [100]
+    opt_n_burnin_epochs::Vector{Int64} = [10, 100]
     opt_n_patient_epochs::Vector{Int64} = [5]
     opt_optimisers::Vector{String} = ["Adam"]
     n_threads::Int64 = 2
     seed::Int64 = 42
+    output_prefix::String = "mlppcve"
     verbose::Bool = true
 
     # Read the trial data
@@ -112,7 +113,7 @@ function julia_main()::Cint
     idx = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...))
     Xy::Dict{String,CuArray{T,2}} = Dict(
         "X" => CuArray(T.(trial.X[:, idx]')), 
-        "y" => CuArray(T.(trial.Y[:, 1]')),
+        "y" => CuArray(T.(trial.Y[:, 1]')), # temporary placeholder, will be replaced in the loop below
     )
     for (j, trait) in enumerate(trial.labels_Y)
         # j = 1; trait = trial.labels_Y[j]
@@ -120,7 +121,6 @@ function julia_main()::Cint
             println("Fitting trait ($j or $(length(trial.labels_Y))): $trait")
         end
         Xy["y"] = CuArray(T.(trial.Y[:, j]'))
-        
         dl_optim = optim(
             Xy,
             n_batches=n_batches,
@@ -138,36 +138,26 @@ function julia_main()::Cint
         )
         @show dl_optim["Full_fit"]["metrics_training"]
         @show dl_optim["Full_fit"]["metrics_training_ols"]
-        
-        # # Extract predictions
-        # y = dl_optim["Full_fit"]["y_true"]
-        # y_hat = dl_optim["Full_fit"]["y_pred"]
-        # metrics(CuArray(y_hat'), CuArray(y'))
-   
         # Extract uncontextualised effects
-        ϕ_nocotext::Vector{T} = []
-        ϕ_nocotext_labels::Vector{String} = []
+        ϕ_nocontext::Vector{T} = []
+        ϕ_nocontext_labels::Vector{String} = []
         x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
         for explanatory_variable in nonfixed_explanatory_variables
             # explanatory_variable = nonfixed_explanatory_variables[2]
             idx = findall(.!isnothing.(match.(Regex("^$explanatory_variable"), trial.labels_X)))
+            ϕ_tmp = []
             for i in idx
                 # i = idx[1]
                 x_new .= 0.0
                 x_new[i, :] .= 1.0
-                push!(ϕ_nocotext, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
-                push!(ϕ_nocotext_labels, trial.labels_X[i])
+                push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
+                push!(ϕ_nocontext_labels, trial.labels_X[i])
             end
+            # Standardised effects within each explanatory variable
+            ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))
+            ϕ_nocontext = vcat(ϕ_nocontext, ϕ_tmp[:, 1])
         end
-        ϕ_nocotext_proportion = ϕ_nocotext ./ sum(abs.(ϕ_nocotext))
-        Φ_nocotext_proportion = hcat(ϕ_nocotext_labels, string.(ϕ_nocotext), string.(ϕ_nocotext_proportion))
-        # idx = findall(.!isnothing.(match.(Regex("entries"), ϕ_nocotext_labels)))
-        # minimum(ϕ_nocotext[idx])
-        # maximum(ϕ_nocotext[idx])
-        # hcat(ϕ_nocotext_labels[idx], string.(ϕ_nocotext[idx]), string.(ϕ_nocotext_proportion[idx]))
-        
-
-        # TODO: Extract contextualised effects
+        # Extract contextualised effects
         requested_contextualised_effects = ["seasons-entries", "sites-entries", "seasons-sites-entries"]
         ϕ_context::Vector{T} = []
         ϕ_context_labels::Vector{String} = []
@@ -177,26 +167,52 @@ function julia_main()::Cint
             idx_factors = [findall(.!isnothing.(match.(Regex("^$factor"), trial.labels_X))) for factor in factors]
             idx_combinations = collect(Iterators.product(idx_factors...))
             x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
+            ϕ_tmp = []
             for idx_combination in idx_combinations
                 # idx_combination = idx_combinations[1]
                 x_new .= 0.0
                 for i in collect(idx_combination)
                     x_new[i, :] .= 1.0
                 end
-                push!(ϕ_context, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
+                push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
                 push!(ϕ_context_labels, join(trial.labels_X[collect(idx_combination)], '-'))
             end
+            # Standardised effects within each combination of explanatory variables
+            ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))
+            ϕ_context = vcat(ϕ_context, ϕ_tmp[:, 1])
         end
-        ϕ_context_proportion = ϕ_context ./ sum(abs.(ϕ_context))
-        Φ_context_proportion = hcat(ϕ_context_labels, string.(ϕ_context), string.(ϕ_context_proportion))
-        
-        Dict(
+        # Outputs
+        output = Dict(
             "dl_optim" => dl_optim,
-            "ϕ_nocotext" => ϕ_nocotext,
-            "ϕ_nocotext_labels" => ϕ_nocotext_labels,
+            "ϕ_nocontext" => ϕ_nocontext,
+            "ϕ_nocontext_labels" => ϕ_nocontext_labels,
             "ϕ_context" => ϕ_context,
             "ϕ_context_labels" => ϕ_context_labels,
         )
+
+        # Save outputs
+        # using Serialization
+        # Serialization.serialize("$output_prefix-$trait-output.bin", output)
+        # file = open("$output_prefix-$trait-output.bin", "r")
+        # output = Serialization.deserialize(file)
+
+        for (k, v) in Dict("nocontext" => (ϕ_nocontext_labels, ϕ_nocontext), "context" => (ϕ_context_labels, ϕ_context))
+            file = open("$(output_prefix)-$(trait)-$(k)_standardised_effects.tsv", "w")
+            if k == "nocontext"
+                write(file, "explanatory_variables\tlevels\teffects\n")
+                write(file, join(string.(replace.(v[1], "|" => "\t"), "\t", v[2]), "\n"))
+                close(file)
+            else
+
+
+                # TODO: separate each combination of explanatory variables because the number of columns we need will vary
+                
+                write(file, "explanatory_variables_combination\teffects\n")
+
+
+                
+            end
+        end
         
 
 

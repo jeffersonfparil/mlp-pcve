@@ -369,8 +369,9 @@ function optim(
     # opt_F_∂F = sort(opt_F_∂F)
     # opt_C_∂C = sort(opt_C_∂C)
     opt_n_epochs = sort(opt_n_epochs)
+    opt_n_burnin_epochs = sort(opt_n_burnin_epochs)
     opt_n_patient_epochs = sort(opt_n_patient_epochs)
-    opt_optimisers = sort(opt_optimisers)
+    # opt_optimisers = sort(opt_optimisers)
     # Prepare parameter space
     par_n_hidden_layers::Vector{Int64} = []
     par_n_nodes_per_hidden_layer::Vector{Int64} = []
@@ -484,7 +485,7 @@ function optim(
     )
     dl_opt = train(
         Xy,
-        fit_full = true,
+        fit_full = false,
         n_hidden_layers = par_n_hidden_layers[idx],
         n_hidden_nodes = repeat(
             [par_n_nodes_per_hidden_layer[idx]],
