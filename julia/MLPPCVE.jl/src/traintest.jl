@@ -185,6 +185,7 @@ function train(
     epochs::Vector{Int64} = []
     loss_training::Vector{T} = []
     loss_validation::Vector{T} = []
+    y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
     for i = 1:n_epochs
         # i = 1
         if verbose
@@ -210,7 +211,7 @@ function train(
         end
         # Metrics for the training and validations sets
         # NOTE: do not use the forward pass because it may have dropouts
-        y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
+        # y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
         y_pred = hcat([predict(Ω, D["X_batch_$j"]) for j = 1:(n_batches-1)]...)
         Θ_training = metrics(y_pred, y_true) 
         Θ_validation = if "y_validation" ∈ keys(D)
