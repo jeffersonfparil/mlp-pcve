@@ -542,8 +542,8 @@ function inittrial(;
     populations::Vector{String} = ["population_$(string(i, pad=length(string(n_populations))))" for i = 1:n_populations],
     replications::Vector{String} = ["replication_$(string(i, pad=length(string(n_replications))))" for i = 1:n_replications],
     blocks::Vector{String} = ["block_$(string(i, pad=length(string(n_blocks))))" for i = 1:n_blocks],
-    rows::Vector{String} = ["block_$(string(i, pad=length(string(n_rows))))" for i = 1:n_rows],
-    cols::Vector{String} = ["block_$(string(i, pad=length(string(n_cols))))" for i = 1:n_cols],
+    rows::Vector{String} = ["row_$(string(i, pad=length(string(n_rows))))" for i = 1:n_rows],
+    cols::Vector{String} = ["col_$(string(i, pad=length(string(n_cols))))" for i = 1:n_cols],
 )::Trial
     if (n_rows * n_cols) != n_plots
         throw("The number of rows * cols must equal the number of plots.")
@@ -792,8 +792,8 @@ function simulatetrial(;
     populations::Vector{String} = ["population_$(string(i, pad=length(string(n_populations))))" for i = 1:n_populations],
     replications::Vector{String} = ["replication_$(string(i, pad=length(string(n_replications))))" for i = 1:n_replications],
     blocks::Vector{String} = ["block_$(string(i, pad=length(string(n_blocks))))" for i = 1:n_blocks],
-    rows::Vector{String} = ["block_$(string(i, pad=length(string(n_rows))))" for i = 1:n_rows],
-    cols::Vector{String} = ["block_$(string(i, pad=length(string(n_cols))))" for i = 1:n_cols],
+    rows::Vector{String} = ["row_$(string(i, pad=length(string(n_rows))))" for i = 1:n_rows],
+    cols::Vector{String} = ["col_$(string(i, pad=length(string(n_cols))))" for i = 1:n_cols],
     trait_specs::Dict{String} = Dict(
         "trait_1" => Dict(
             "linear" => true,

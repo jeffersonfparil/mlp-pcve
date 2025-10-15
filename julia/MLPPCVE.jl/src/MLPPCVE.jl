@@ -1,12 +1,12 @@
 module MLPPCVE
 
-using Random, LinearAlgebra, CUDA
+using Random, LinearAlgebra, CUDA, JLD2
 
 # TODO: 
 # Make this more portable, i.e. allowing use of CPU or any type of GPU available in the system
-# Current attempt at portability using PackageCompiler.jl:
+# Current attempt at portability using PackageCompiler.jl and Julia version 1.11 (version 1.12 fails):
 # - always compile CUDA with the graphics card you want to use the binary on
-# - compile: `using PackageCompiler; create_app("MLPPCVE.jl/", "mlppcve-bin")`
+# - compile: `julia +1.11 -E 'using Pkg; Pkg.resolve(); using PackageCompiler; create_app("MLPPCVE.jl/", "mlppcve-bin")'`
 # - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false`
 # - test run - no arguments show help docs: `./mlppcve-bin/bin/MLPPCVE`
 
@@ -48,7 +48,8 @@ function args_parser()
     # ARGS is implicit?!
     if length(ARGS) == 0 || ARGS[1] == "--help" || ARGS[1] == "-h" || ARGS[1] == "help" || ARGS[1] == "h"
         println("Usage: ./mlppcve-bin/bin/MLPPCVE (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
-        println("Example: ./mlppcve-bin/bin/MLPPCVE simulated_trial_data.csv , 1 2")
+        println("\t‣ Run example: ./mlppcve-bin/bin/MLPPCVE --example")
+        println("\t‣ Run on some data: ./mlppcve-bin/bin/MLPPCVE some_trial_data.csv , 1 2")
         exit(0)
     elseif ARGS[1] == "--example" || ARGS[1] == "example"
         println("Analysing a simulated trial with default parameters, i.e. max_layers=3 and n_batches=2.")
@@ -59,7 +60,12 @@ function args_parser()
         (fname, delimiter, max_layers, n_batches)
     elseif length(ARGS) == 4
         fname = ARGS[1]
+
+
+        # TODO: fix issue with delimiter and input file parsing
         delimiter = ARGS[2]
+        
+        
         max_layers = parse(Int64, ARGS[3])
         n_batches = parse(Int64, ARGS[4])
         (fname, delimiter, max_layers, n_batches)
@@ -78,6 +84,7 @@ function julia_main()::Cint
     # Parse arguments
     fname, delimiter, max_layers, n_batches = args_parser()
     # fname, delimiter, max_layers, n_batches = (writetrial(simulatetrial(verbose=false)), ",", 3, 2)
+    # # fname = "/group/pasture/forages/Ryegrass/STR/NUE_WUE_merged_2022_2025/phenotypes/STR-NUE_WUE-Hamilton_Tatura-2023_2025.tsv"; delimiter = "\t"
     T::Type = Float32
     expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
@@ -110,17 +117,17 @@ function julia_main()::Cint
         println("Fixed explanatory variables: $(fixed_explanatory_variables)")
         println("Non-fixed explanatory variables: $(nonfixed_explanatory_variables)")
     end
-    idx = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...))
-    Xy::Dict{String,CuArray{T,2}} = Dict(
-        "X" => CuArray(T.(trial.X[:, idx]')), 
-        "y" => CuArray(T.(trial.Y[:, 1]')), # temporary placeholder, will be replaced in the loop below
-    )
+    idx_vars = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...)) # remove fixed variables
     for (j, trait) in enumerate(trial.labels_Y)
         # j = 1; trait = trial.labels_Y[j]
         if verbose
             println("Fitting trait ($j or $(length(trial.labels_Y))): $trait")
         end
-        Xy["y"] = CuArray(T.(trial.Y[:, j]'))
+        idx_obs = findall(.!isnan.(trial.Y[:, j])) # remove observations with missing trait values
+        Xy::Dict{String,CuArray{T,2}} = Dict(
+            "X" => CuArray(T.(trial.X[idx_obs, idx_vars]')), 
+            "y" => CuArray(T.(trial.Y[idx_obs, j]')),
+        )
         dl_optim = optim(
             Xy,
             n_batches=n_batches,
@@ -136,14 +143,14 @@ function julia_main()::Cint
             n_threads=n_threads,
             seed=seed,
         )
-        @show dl_optim["Full_fit"]["metrics_training"]
-        @show dl_optim["Full_fit"]["metrics_training_ols"]
+        # @show dl_optim["Full_fit"]["metrics_training"]
+        # @show dl_optim["Full_fit"]["metrics_training_ols"]
         # Extract uncontextualised effects
         ϕ_nocontext::Vector{T} = []
         ϕ_nocontext_labels::Vector{String} = []
         x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
         for explanatory_variable in nonfixed_explanatory_variables
-            # explanatory_variable = nonfixed_explanatory_variables[2]
+            # explanatory_variable = nonfixed_explanatory_variables[3]
             idx = findall(.!isnothing.(match.(Regex("^$explanatory_variable"), trial.labels_X)))
             ϕ_tmp = []
             for i in idx
@@ -154,13 +161,12 @@ function julia_main()::Cint
                 push!(ϕ_nocontext_labels, trial.labels_X[i])
             end
             # Standardised effects within each explanatory variable
-            ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))
+            ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ (std(hcat(ϕ_tmp)) .+ eps(Float64)) # add ϵ to avoid NaNsS
             ϕ_nocontext = vcat(ϕ_nocontext, ϕ_tmp[:, 1])
         end
         # Extract contextualised effects
         requested_contextualised_effects = ["seasons-entries", "sites-entries", "seasons-sites-entries"]
-        ϕ_context::Vector{T} = []
-        ϕ_context_labels::Vector{String} = []
+        Φ_context = Dict()
         for contextualised_effect in requested_contextualised_effects
             # contextualised_effect = requested_contextualised_effects[3]
             factors = String.(split(contextualised_effect, '-'))
@@ -168,6 +174,7 @@ function julia_main()::Cint
             idx_combinations = collect(Iterators.product(idx_factors...))
             x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
             ϕ_tmp = []
+            ϕ_tmp_labels = []
             for idx_combination in idx_combinations
                 # idx_combination = idx_combinations[1]
                 x_new .= 0.0
@@ -175,47 +182,50 @@ function julia_main()::Cint
                     x_new[i, :] .= 1.0
                 end
                 push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
-                push!(ϕ_context_labels, join(trial.labels_X[collect(idx_combination)], '-'))
+                push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '-'))
             end
             # Standardised effects within each combination of explanatory variables
             ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))
-            ϕ_context = vcat(ϕ_context, ϕ_tmp[:, 1])
+            Φ_context[contextualised_effect] = Dict(
+                "ϕ_context" => ϕ_tmp[:, 1],
+                "ϕ_context_labels" => ϕ_tmp_labels,
+            )
         end
         # Outputs
         output = Dict(
             "dl_optim" => dl_optim,
             "ϕ_nocontext" => ϕ_nocontext,
             "ϕ_nocontext_labels" => ϕ_nocontext_labels,
-            "ϕ_context" => ϕ_context,
-            "ϕ_context_labels" => ϕ_context_labels,
+            "Φ_context" => Φ_context,
         )
-
         # Save outputs
-        # using Serialization
-        # Serialization.serialize("$output_prefix-$trait-output.bin", output)
-        # file = open("$output_prefix-$trait-output.bin", "r")
-        # output = Serialization.deserialize(file)
-
-        for (k, v) in Dict("nocontext" => (ϕ_nocontext_labels, ϕ_nocontext), "context" => (ϕ_context_labels, ϕ_context))
-            file = open("$(output_prefix)-$(trait)-$(k)_standardised_effects.tsv", "w")
-            if k == "nocontext"
-                write(file, "explanatory_variables\tlevels\teffects\n")
-                write(file, join(string.(replace.(v[1], "|" => "\t"), "\t", v[2]), "\n"))
-                close(file)
-            else
-
-
-                # TODO: separate each combination of explanatory variables because the number of columns we need will vary
-                
-                write(file, "explanatory_variables_combination\teffects\n")
-
-
-                
+        fnames_outputs = vcat(
+            "$output_prefix-$trait-output.jld2",
+            "$(output_prefix)-$(trait)-nocontext_standardised_effects.tsv",
+            ["$(output_prefix)-$(trait)-$(replace(k, "-" => "_"))_standardised_effects.tsv" for k in keys(Φ_context)]
+        )
+        # Save all output into a JLD2 (HDF5-compatible format)
+        JLD2.save(fnames_outputs[1], output)
+        # Save context-less standardised effects of each explanatory variable level
+        open(fnames_outputs[2], "w") do file
+            write(file, "#explanatory_variables\tlevels\teffects\n")
+            write(file, join(string.(replace.(ϕ_nocontext_labels, "|" => "\t"), "\t", ϕ_nocontext), "\n"))
+        end
+        # Save contextual standardised effects - with one file for each explanatory variable combination requested
+        for (i, (k, v)) in enumerate(Φ_context)
+            # k = String.(keys(Φ_context))[1]; v = Φ_context[k]
+            open(fnames_outputs[i+2], "w") do file
+                explanatory_variables = String.(split(k, "-"))
+                for var in explanatory_variables
+                    v["ϕ_context_labels"] = replace.(v["ϕ_context_labels"], "$var|" => "")
+                end
+                write(file, "#")
+                write(file, join(vcat(explanatory_variables, "effects\n"), "\t"))
+                write(file, join(string.(replace.(v["ϕ_context_labels"], "-" => "\t"), "\t", v["ϕ_context"]), "\n"))
             end
         end
-        
-
-
+        println("##################################################")
+        println(join(vcat("$(trait) | output files:", fnames_outputs), "\n\t‣ "))
     end
     return 0
 end

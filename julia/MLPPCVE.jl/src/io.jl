@@ -1,12 +1,12 @@
 """
-    writetrial(trial::Trial; fname::String="simulated_trial_data.csv", delimiter::Union{Char,String}=',')::String
+    writetrial(trial::Trial; fname::String="simulated_trial_data.csv", delimiter::Union{Char,String}=",")::String
 
 Write trial data to a CSV file.
 
 # Arguments
 - `trial::Trial`: Trial object containing data to be written
 - `fname::String="simulated_trial_data.csv"`: Output filename for the CSV file
-- `delimiter::Union{Char,String}=','`: Delimiter character or string for CSV format
+- `delimiter::Union{Char,String}=","`: Delimiter character or string for CSV format
 
 # Returns
 - `String`: The filename where data was written
@@ -28,10 +28,10 @@ julia> fname = writetrial(trial)
 function writetrial(
     trial::Trial;
     fname::String = "simulated_trial_data.csv",
-    delimiter::Union{Char, String} = ',',
+    delimiter::String = ",",
 )::String
     open(fname, "w") do io
-        println(io, join(vcat(trial.labels_A, trial.labels_Y), ','))
+        println(io, join(vcat(trial.labels_A, trial.labels_Y), delimiter))
         n = size(trial.A, 1)
         @inbounds for i = 1:n
             # i = 1
@@ -49,22 +49,32 @@ function writetrial(
 end
 
 """
-    readtrial(fname::String; delimiter::Union{Char, String} = ',')::Trial
+    readtrial(; fname::String, delimiter::String=",", 
+    missing_strings::Vector{String}=["", "NA", "NaN", "missing", "NAN", "na", "nan", "missing", "Missing", "MISSING"],
+    expected_labels_A::Vector{String}=["years", "seasons", "harvests", "sites", "replications", 
+    "entries", "populations", "blocks", "rows", "cols"])::Trial
 
 Read trial data from a CSV-like file and construct a `Trial` object.
 
 # Arguments
 - `fname::String`: Path to the input file
-- `delimiter::Union{Char, String}=','`: Character or string used to separate values in the file
+- `delimiter::String=","`: Character or string used to separate values in the file
+- `missing_strings::Vector{String}`: Strings to be interpreted as missing values and set to NaN
+- `expected_labels_A::Vector{String}`: Expected factor names to match against column headers
 
 # Returns
 - `Trial`: A Trial object containing:
   - `X`: Design matrix (n × p) with dummy variables
-  - `Y`: Response matrix (n × t) with observations
+  - `Y`: Response matrix (n × t) with observations (missing values as NaN)
   - `A`: Factor matrix (n × f) with factor levels as strings
   - `labels_X`: Vector of column names for X (length p)
   - `labels_Y`: Vector of column names for Y (length t)
   - `labels_A`: Vector of factor names (length f)
+
+# Notes
+- Missing values in response variables (Y) are stored as NaN instead of Julia's `missing` type
+- The function recognises various string representations of missing values (e.g., "NA", "missing", "")
+  and converts them to NaN in the Y matrix
 
 # Format
 The input file should be a delimited text file with:
@@ -108,7 +118,8 @@ true
 """
 function readtrial(;
     fname::String,
-    delimiter::Union{Char, String} = ',',
+    delimiter::String = ",",
+    missing_strings::Vector{String} = ["", "NA", "NaN", "missing", "NAN", "na", "nan", "missing", "Missing", "MISSING"],
     expected_labels_A::Vector{String} = [
         "years",
         "seasons",
@@ -123,11 +134,10 @@ function readtrial(;
     ],
 )::Trial
     # fname = writetrial(simulatetrial())
-    # delimiter = ','
+    # delimiter = ","
     # expected_labels_A = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     isfile(fname) || error("File $fname does not exist.")
     # Extract header information, i.e. labels_A and labels_Y
-    
     io = open(fname, "r")
     header = String.(split(readline(io), delimiter))
     if length(header) < 2
@@ -153,12 +163,13 @@ function readtrial(;
     open(fname, "r") do io
         readline(io) # skip header
         @inbounds for i = 1:n
+            # i = 1
             ay = split(readline(io), delimiter)
             if length(ay) != length(header)
                 error("Row $i in file \"$fname\" does not have the same number of columns as the header. Delimiter: \"$delimiter\" may not be correct.")
             end
             y = try
-                parse.(Float64, ay[idx_Y])
+                [x ∈ missing_strings ? NaN : parse.(Float64, x) for x in ay[idx_Y]]
             catch
                 error("Column/s $(join(labels_Y, ", ")) in file \"$fname\" cannot be parsed as Float64.")
             end
