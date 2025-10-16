@@ -111,11 +111,17 @@ function julia_main()::Cint
 
     
     # Parse arguments
-    fname, delimiter, max_layers, n_batches = args_parser()
+    # fname, delimiter, max_layers, n_batches = args_parser()
     # fname, delimiter, max_layers, n_batches = (writetrial(simulatetrial(verbose=false)), ",", 3, 2)
     # #  fname = "/group/pasture/forages/Ryegrass/STR/NUE_WUE_merged_2022_2025/phenotypes/STR-NUE_WUE-Hamilton_Tatura-2023_2025.tsv"; delimiter = "\t"; max_layers = 1; n_batches = 2
+    args = args_parser()
+    fname = args["fname"]
+    delimiter = args["delimiter"]
+    max_layers = args["max_layers"]
+    n_batches = args["n_batches"]
     T::Type = Float32
-    expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
+    # expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
+    expected_labels_A = args["expected_labels_A"]
     opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
     opt_n_nodes_per_hidden_layer::Vector{Int64} = [128, 256]
     opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
