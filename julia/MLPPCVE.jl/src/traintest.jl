@@ -190,7 +190,7 @@ function train(
         # i = 1
         if verbose
             p = Int(round(100 * i / n_epochs))
-            print("\r$(repeat("█", p)) | $p% ")
+            print("\r$(repeat("░", p)) | $p% training")
         end
         for j = 1:(n_batches-1)
             # j = 1
@@ -246,10 +246,10 @@ function train(
     end
     # Memory clean-up
     CUDA.reclaim()
-    if verbose
-        println("")
-        CUDA.pool_status()
-    end
+    # if verbose
+    #     println("")
+    #     CUDA.pool_status()
+    # end
     # DL fit
     metrics_training = begin
         y_true = hcat([D["y_batch_$j"] for j = 1:(n_batches-1)]...)
@@ -339,6 +339,11 @@ function optim(
     opt_n_burnin_epochs::Vector{Int64} = [100],
     opt_n_patient_epochs::Vector{Int64} = [5],
     opt_optimisers::Vector{String} = ["Adam"],
+    η::Float64 = 0.001,
+    β₁::Float64 = 0.900,
+    β₂::Float64 = 0.999,
+    ϵ::Float64 = 1e-8,
+    t::Float64 = 0.0,
     n_threads::Int64 = 1,
     seed::Int64 = 42,
 )::Dict{String,Dict{String}} where {T<:AbstractFloat}
@@ -353,6 +358,11 @@ function optim(
     # opt_n_burnin_epochs::Vector{Int64} = [100]
     # opt_n_patient_epochs::Vector{Float64} = [5]
     # opt_optimisers::Vector{String} = ["Adam"]
+    # η::Float64 = 0.001
+    # β₁::Float64 = 0.900
+    # β₂::Float64 = 0.999
+    # ϵ::Float64 = 1e-8
+    # t::Float64 = 0.0
     # n_threads::Int64 = 2
     # seed::Int64 = 42
     #
@@ -453,13 +463,18 @@ function optim(
                 n_burnin_epochs = par_n_burnin_epochs[i],
                 n_patient_epochs = par_n_patient_epochs[i],
                 optimiser = par_optimisers[i],
+                η = η,
+                β₁ = β₁,
+                β₂ = β₂,
+                ϵ = ϵ,
+                t = t,
                 seed = seed,
-                verbose = false,
+                verbose = true, # setting this to true so that the user can still still some progress per training run
             )
             actual_n_epochs[i] = length(dl["loss_training"])
             mse[i] = Float64(dl["metrics_validation"]["mse"])
             p = Int(round(100 * sum(.!isnan.(mse)) / P))
-            print("\r$(repeat("█", p)) | $p% ")
+            print("\r$(repeat("█", p)) | $p% hyperparam. optim.")
         end
     end
     println("")

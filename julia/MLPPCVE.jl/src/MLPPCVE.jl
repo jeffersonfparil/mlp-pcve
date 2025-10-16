@@ -1,6 +1,6 @@
 module MLPPCVE
 
-using Random, LinearAlgebra, CUDA, JLD2
+using Random, LinearAlgebra, CUDA, JLD2, ArgParse
 
 # TODO: 
 # Make this more portable, i.e. allowing use of CPU or any type of GPU available in the system
@@ -44,47 +44,76 @@ export gradientdescent!, Adam!, AdamMax!
 export splitdata, predict, train, optim
 
 # Testing
+# TODO: 
+#   - improve argument parsing
+#   - use ArgParse.jl?
+#   - add trait selection
 function args_parser()
     # ARGS is implicit?!
-    if length(ARGS) == 0 || ARGS[1] == "--help" || ARGS[1] == "-h" || ARGS[1] == "help" || ARGS[1] == "h"
-        println("Usage: ./mlppcve-bin/bin/MLPPCVE (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
-        println("\t‣ Run example: ./mlppcve-bin/bin/MLPPCVE --example")
-        println("\t‣ Run on some data: ./mlppcve-bin/bin/MLPPCVE some_trial_data.csv , 1 2")
-        exit(0)
-    elseif ARGS[1] == "--example" || ARGS[1] == "example"
-        println("Analysing a simulated trial with default parameters, i.e. max_layers=3 and n_batches=2.")
-        fname = writetrial(simulatetrial(verbose=false))
-        delimiter = ","
-        max_layers = 3
-        n_batches = 2
-        (fname, delimiter, max_layers, n_batches)
-    elseif length(ARGS) == 4
-        fname = ARGS[1]
-
-
-        # TODO: fix issue with delimiter and input file parsing
-        delimiter = ARGS[2]
-        
-        
-        max_layers = parse(Int64, ARGS[3])
-        n_batches = parse(Int64, ARGS[4])
-        (fname, delimiter, max_layers, n_batches)
-    else
-        println("Incorrect number of arguments provided. Provide: (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
-        println("Example: ./mlppcve-bin/bin/MLPPCVE simulated_trial_data.csv , 3 2")
-        exit(1)
+    # if length(ARGS) == 0 || ARGS[1] == "--help" || ARGS[1] == "-h" || ARGS[1] == "help" || ARGS[1] == "h"
+    #     println("Usage: ./mlppcve-bin/bin/MLPPCVE (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
+    #     println("\t‣ Run example: ./mlppcve-bin/bin/MLPPCVE --example")
+    #     println("\t‣ Run on some data: ./mlppcve-bin/bin/MLPPCVE some_trial_data.csv , 1 2")
+    #     exit(0)
+    # elseif ARGS[1] == "--example" || ARGS[1] == "example"
+    #     println("Analysing a simulated trial with default parameters, i.e. max_layers=3 and n_batches=2.")
+    #     fname = writetrial(simulatetrial(verbose=false))
+    #     delimiter = ","
+    #     max_layers = 3
+    #     n_batches = 2
+    #     (fname, delimiter, max_layers, n_batches)
+    # elseif length(ARGS) == 4
+    #     fname = ARGS[1]
+    #     delimiter = ARGS[2]
+    #     max_layers = parse(Int64, ARGS[3])
+    #     n_batches = parse(Int64, ARGS[4])
+    #     (fname, delimiter, max_layers, n_batches)
+    # else
+    #     println("Incorrect number of arguments provided. Provide: (1) path to the CSV file, (2) delimiter (character or string), (3) maximum number of hidden layers to test (integer), (4) number of batches (integer).")
+    #     println("Example: ./mlppcve-bin/bin/MLPPCVE simulated_trial_data.csv , 3 2")
+    #     exit(1)
+    # end
+    s = ArgParseSettings()
+    @add_arg_table! s begin
+        "--fname", "-f"
+            help = "Filename of the trial data saved as a delimited text file"
+            arg_type = String
+        "--delimiter", "-d"
+            help = "Text delimiter used in the trial data file"
+            arg_type = String
+            default = ","
+        "--max-layers", "-l"
+            help = "Maximum number of hidden layers to test"
+            arg_type = Int
+            default = 3
+        "--n-batches", "-b"
+            help = "Number of batches to divide the data to reduced memory footprint and for cross-validation during training. This must be ≥ 2."
+            arg_type = Int
+            default = 2
+        "--expected-labels", "-L"
+            help = "The type of the "
+            arg_type = String
+            default = "years,seasons,harvests,sites,replications,entries,populations,blocks,rows,cols"
+        # "--flag1"
+        #     help = "an option without argument, i.e. a flag"
+        #     action = :store_true
     end
+    args = parse_args(s)
+    args["expected_labels_A"] = String.(split(args["expected_labels"], ","))
+
+    return args
 end
 
 function julia_main()::Cint
     
     
     # TODO: a more ergonomic parser? Or just make it as simple no need for another external library?
+
     
     # Parse arguments
     fname, delimiter, max_layers, n_batches = args_parser()
     # fname, delimiter, max_layers, n_batches = (writetrial(simulatetrial(verbose=false)), ",", 3, 2)
-    # # fname = "/group/pasture/forages/Ryegrass/STR/NUE_WUE_merged_2022_2025/phenotypes/STR-NUE_WUE-Hamilton_Tatura-2023_2025.tsv"; delimiter = "\t"
+    # #  fname = "/group/pasture/forages/Ryegrass/STR/NUE_WUE_merged_2022_2025/phenotypes/STR-NUE_WUE-Hamilton_Tatura-2023_2025.tsv"; delimiter = "\t"; max_layers = 1; n_batches = 2
     T::Type = Float32
     expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
@@ -92,10 +121,17 @@ function julia_main()::Cint
     opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
     opt_F_∂F::Vector{Dict{Symbol,Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
     opt_C_∂C::Vector{Dict{Symbol,Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)]
-    opt_n_epochs::Vector{Int64} = [10_000]
+    opt_n_epochs::Vector{Int64} = [1_000]
     opt_n_burnin_epochs::Vector{Int64} = [10, 100]
     opt_n_patient_epochs::Vector{Int64} = [5]
     opt_optimisers::Vector{String} = ["Adam"]
+
+    η::Float64 = 0.001
+    β₁::Float64 = 0.900
+    β₂::Float64 = 0.999
+    ϵ::Float64 = 1e-8
+    t::Float64 = 0.0
+
     n_threads::Int64 = 2
     seed::Int64 = 42
     output_prefix::String = "mlppcve"
@@ -119,14 +155,22 @@ function julia_main()::Cint
     end
     idx_vars = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...)) # remove fixed variables
     for (j, trait) in enumerate(trial.labels_Y)
-        # j = 1; trait = trial.labels_Y[j]
+       # j = 1; trait = trial.labels_Y[j]
         if verbose
             println("Fitting trait ($j or $(length(trial.labels_Y))): $trait")
         end
-        idx_obs = findall(.!isnan.(trial.Y[:, j])) # remove observations with missing trait values
+        y, μ_y, σ_y, idx_obs = begin
+            y =  trial.Y[:, j]
+            idx_obs = findall(.!isnan.(y)) # remove observations with missing trait values
+            y = y[idx_obs]
+            μ_y = mean(hcat(y))[1,1]
+            σ_y = std(hcat(y))[1,1]
+            y = (y .- μ_y) ./ (σ_y .+ eps(T))
+            (y, μ_y, σ_y, idx_obs)
+        end
         Xy::Dict{String,CuArray{T,2}} = Dict(
             "X" => CuArray(T.(trial.X[idx_obs, idx_vars]')), 
-            "y" => CuArray(T.(trial.Y[idx_obs, j]')),
+            "y" => CuArray(T.(y')),
         )
         dl_optim = optim(
             Xy,
@@ -140,11 +184,16 @@ function julia_main()::Cint
             opt_n_burnin_epochs=opt_n_burnin_epochs,
             opt_n_patient_epochs=opt_n_patient_epochs,
             opt_optimisers=opt_optimisers,
+            η=η,
+            β₁=β₁,
+            β₂=β₂,
+            ϵ=ϵ,
+            t=t,
             n_threads=n_threads,
             seed=seed,
         )
-        # @show dl_optim["Full_fit"]["metrics_training"]
-        # @show dl_optim["Full_fit"]["metrics_training_ols"]
+        @show dl_optim["Full_fit"]["metrics_training"]
+        @show dl_optim["Full_fit"]["metrics_training_ols"]
         # Extract uncontextualised effects
         ϕ_nocontext::Vector{T} = []
         ϕ_nocontext_labels::Vector{String} = []
@@ -193,6 +242,9 @@ function julia_main()::Cint
         end
         # Outputs
         output = Dict(
+            "trait" => trait,
+            "μ_y" => μ_y,
+            "σ_y" => σ_y,
             "dl_optim" => dl_optim,
             "ϕ_nocontext" => ϕ_nocontext,
             "ϕ_nocontext_labels" => ϕ_nocontext_labels,

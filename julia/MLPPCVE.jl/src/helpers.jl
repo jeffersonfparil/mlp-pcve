@@ -227,13 +227,14 @@ function init(
     W = []
     b = []
     for i = 1:(n_total_layers-1)
-        # i = 2
+        # i = 1
         n_i = n_total_nodes[i+1]
         p_i = n_total_nodes[i]
         # Initialise the weights as: w ~ N(0, 0.1) and all biases to zero
         w = if !isnothing(y) && (i == 1)
             # Force the first layer to have the OLS solution
-            CuArray{T,2}(reshape(repeat(inv(X * X') * (X*y')[:, 1], outer = n_i), p_i, n_i)')
+            β = pinv(X * X') * (X*y')[:, 1]
+            CuArray{T,2}(reshape(repeat(β, outer = n_i), p_i, n_i)')
         else
             CuArray{T,2}(reshape(sampleNormal(n_i * p_i, μ = T(0.0), σ = T(0.1)), n_i, p_i))
         end

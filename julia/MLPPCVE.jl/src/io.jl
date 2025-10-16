@@ -137,6 +137,12 @@ function readtrial(;
     # delimiter = ","
     # expected_labels_A = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
     isfile(fname) || error("File $fname does not exist.")
+    # Make sure the tab delimiter is properly parsed
+    delimiter = if delimiter == "\\t"
+        "\t"
+    else
+        delimiter
+    end
     # Extract header information, i.e. labels_A and labels_Y
     io = open(fname, "r")
     header = String.(split(readline(io), delimiter))
