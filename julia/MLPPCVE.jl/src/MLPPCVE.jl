@@ -82,25 +82,93 @@ function args_parser()
             help = "Text delimiter used in the trial data file"
             arg_type = String
             default = ","
-        "--max-layers", "-l"
-            help = "Maximum number of hidden layers to test"
-            arg_type = Int
-            default = 3
         "--n-batches", "-b"
             help = "Number of batches to divide the data to reduced memory footprint and for cross-validation during training. This must be ≥ 2."
             arg_type = Int
             default = 2
         "--expected-labels", "-L"
-            help = "The type of the "
+            help = ""
             arg_type = String
             default = "years,seasons,harvests,sites,replications,entries,populations,blocks,rows,cols"
+        "--opt-n-hidden-layers"
+            help = ""
+            arg_type = String
+            default = "0,1,2,3"
+        "--opt-n-nodes-per-hidden-layer"
+            help = ""
+            arg_type = String
+            default = "128,256"
+        "--opt-dropout-per-hidden-layer"
+            help = ""
+            arg_type = String
+            default = "0.0"
+        "--opt-n-epochs"
+            help = ""
+            arg_type = String
+            default = "1000"
+        "--opt-n-burnin-epochs"
+            help = ""
+            arg_type = String
+            default = "10,100"
+        "--opt-n-patient-epochs"
+            help = ""
+            arg_type = String
+            default = "5"
+        "--opt-optimisers"
+            help = ""
+            arg_type = String
+            default = "Adam"
         # "--flag1"
         #     help = "an option without argument, i.e. a flag"
         #     action = :store_true
     end
     args = parse_args(s)
-    args["expected_labels_A"] = String.(split(args["expected_labels"], ","))
-
+    @show args
+    strip_these_chars = ['{', '}', '\n', ' ', '\t']
+    # Input file
+    args["fname"] = if args["fname"] == "example"
+        # Use simulated trial data as an example run
+        writetrial(simulatetrial(verbose=false))
+    else
+        args["fname"]
+    end
+    args["expected-labels-A"] = String.(split(strip(args["expected-labels"], strip_these_chars), ","))
+    # Vectors of Int64
+    for k in [
+        "opt-n-hidden-layers",
+        "opt-n-nodes-per-hidden-layer",
+        "opt-n-epochs",
+        "opt-n-burnin-epochs",
+        "opt-n-patient-epochs",
+    ]
+        args[k] = begin
+            a = []
+            for b in split(strip(args[k], strip_these_chars), ",")
+                try
+                    push!(a, parse(Int64, b))
+                catch
+                    error("Cannot parse `--$k` as Int64: $(args[k])")
+                end
+            end
+            a
+        end
+    end
+    # Vectors of Float64
+    for k in [
+        "opt-dropout-per-hidden-layer",
+    ]
+        args[k] = begin
+            a = []
+            for b in split(strip(args[k], strip_these_chars), ",")
+                try
+                    push!(a, parse(Float64, b))
+                catch
+                    error("Cannot parse `--$k` as Float64: $(args[k])")
+                end
+            end
+            a
+        end
+    end
     return args
 end
 
@@ -117,31 +185,47 @@ function julia_main()::Cint
     args = args_parser()
     fname = args["fname"]
     delimiter = args["delimiter"]
-    max_layers = args["max_layers"]
-    n_batches = args["n_batches"]
+    max_layers = args["max-layers"]
+    n_batches = args["n-batches"]
     T::Type = Float32
     # expected_labels_A::Vector{String} = ["years", "seasons", "harvests", "sites", "replications", "entries", "populations", "blocks", "rows", "cols"]
-    expected_labels_A = args["expected_labels_A"]
-    opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
-    opt_n_nodes_per_hidden_layer::Vector{Int64} = [128, 256]
-    opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
+    expected_labels_A = args["expected-labels-A"]
+    # opt_n_hidden_layers::Vector{Int64} = collect(0:max_layers)
+    opt_n_hidden_layers = args["opt-n-hidden-layers"]
+    # opt_n_nodes_per_hidden_layer::Vector{Int64} = [128, 256]
+    opt_n_nodes_per_hidden_layer = args["opt-n-nodes-per-hidden-layer"]
+    # opt_dropout_per_hidden_layer::Vector{Float64} = [0.0]
+    opt_dropout_per_hidden_layer = args["opt-dropout-per-hidden-layer"]
+    # opt_n_epochs::Vector{Int64} = [1_000]
+    opt_n_epochs = args["opt-n-epochs"]
+    # opt_n_burnin_epochs::Vector{Int64} = [10, 100]
+    opt_n_burnin_epochs = args["opt-n-burnin-epochs"]
+    # opt_n_patient_epochs::Vector{Int64} = [5]
+    opt_n_patient_epochs = args["opt-n-patient-epochs"]
+    # opt_optimisers::Vector{String} = ["Adam"]
+    opt_optimisers = args["opt-optimisers"]
+    
     opt_F_∂F::Vector{Dict{Symbol,Function}} = [Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)]
     opt_C_∂C::Vector{Dict{Symbol,Function}} = [Dict(:C => MSE, :∂C => MSE_derivative)]
-    opt_n_epochs::Vector{Int64} = [1_000]
-    opt_n_burnin_epochs::Vector{Int64} = [10, 100]
-    opt_n_patient_epochs::Vector{Int64} = [5]
-    opt_optimisers::Vector{String} = ["Adam"]
-
-    η::Float64 = 0.001
-    β₁::Float64 = 0.900
-    β₂::Float64 = 0.999
-    ϵ::Float64 = 1e-8
-    t::Float64 = 0.0
-
-    n_threads::Int64 = 2
-    seed::Int64 = 42
-    output_prefix::String = "mlppcve"
-    verbose::Bool = true
+    
+    # η::Float64 = 0.001
+    η = args["η"]
+    # β₁::Float64 = 0.900
+    β₁ = args["β₁"]
+    # β₂::Float64 = 0.999
+    β₂ = args["β₂"]
+    # ϵ::Float64 = 1e-8
+    ϵ = args["ϵ"]
+    # t::Float64 = 0.0
+    t = args["t"]
+    # n_threads::Int64 = 2
+    n_threads = args["n_threads"]
+    # seed::Int64 = 42
+    seed = args["seed"]
+    # output_prefix::String = "mlppcve"
+    output_prefix = args["output_prefix"]
+    # verbose::Bool = true
+    verbose = args["verbose"]
 
     # Read the trial data
     trial = readtrial(fname=fname, delimiter=delimiter, expected_labels_A=expected_labels_A)
@@ -237,7 +321,8 @@ function julia_main()::Cint
                     x_new[i, :] .= 1.0
                 end
                 push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
-                push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '-'))
+                # push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '-'))
+                push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '\t'))
             end
             # Standardised effects within each combination of explanatory variables
             ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))
@@ -279,7 +364,8 @@ function julia_main()::Cint
                 end
                 write(file, "#")
                 write(file, join(vcat(explanatory_variables, "effects\n"), "\t"))
-                write(file, join(string.(replace.(v["ϕ_context_labels"], "-" => "\t"), "\t", v["ϕ_context"]), "\n"))
+                # write(file, join(string.(replace.(v["ϕ_context_labels"], "-" => "\t"), "\t", v["ϕ_context"]), "\n"))
+                write(file, join(string.(v["ϕ_context_labels"], "\t", v["ϕ_context"]), "\n"))
             end
         end
         println("##################################################")
