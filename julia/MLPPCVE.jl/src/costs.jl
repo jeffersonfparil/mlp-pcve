@@ -1,3 +1,4 @@
+# Mean squared error
 function MSE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
     # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
     map(x -> (x^2) / 2, ŷ - y) # division by 2 is cosmetic-ish --> just so that the derivative is simple the difference - see below
@@ -11,6 +12,7 @@ function MSE_derivative(
     map(x -> x, ŷ - y)
 end
 
+# Mean absolute error
 function MAE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
     # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
     map(x -> abs(x) / 2, ŷ - y)
@@ -24,6 +26,7 @@ function MAE_derivative(
     map(x -> x < 0.0 ? 1.0 : -1.0, ŷ - y)
 end
 
+# Huber loss
 function HL(
     ŷ::CuArray{T,2},
     y::CuArray{T,2};

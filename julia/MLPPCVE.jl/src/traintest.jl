@@ -79,7 +79,6 @@ function train(
     β₁::Float64 = 0.900,
     β₂::Float64 = 0.999,
     ϵ::Float64 = 1e-8,
-    t::Float64 = 0.0,
     seed::Int64 = 42,
     verbose::Bool = true,
 )::Dict{String,Union{Network{T},Vector{T},Dict{String,T}}} where {T<:AbstractFloat}
@@ -103,7 +102,6 @@ function train(
     # β₁::Float64 = 0.900
     # β₂::Float64 = 0.999
     # ϵ::Float64 = 1e-8
-    # t::Float64 = 0.0
     # seed::Int64 = 42
     # verbose::Bool = true
     # T = typeof(Matrix(Xy["y"])[1,1])
@@ -175,7 +173,7 @@ function train(
             "β₁" => T(β₁),
             "β₂" => T(β₂),
             "ϵ" => T(ϵ),
-            "t" => T(t),
+            "t" => T(0.0),
             "m_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
             "v_W" => [CuArray{T,2}(zeros(size(x))) for x in Ω.W],
             "m_b" => [CuArray{T,1}(zeros(size(x))) for x in Ω.b],
@@ -343,7 +341,6 @@ function optim(
     β₁::Float64 = 0.900,
     β₂::Float64 = 0.999,
     ϵ::Float64 = 1e-8,
-    t::Float64 = 0.0,
     n_threads::Int64 = 1,
     seed::Int64 = 42,
 )::Dict{String,Dict{String}} where {T<:AbstractFloat}
@@ -362,7 +359,6 @@ function optim(
     # β₁::Float64 = 0.900
     # β₂::Float64 = 0.999
     # ϵ::Float64 = 1e-8
-    # t::Float64 = 0.0
     # n_threads::Int64 = 2
     # seed::Int64 = 42
     #
@@ -467,7 +463,6 @@ function optim(
                 β₁ = β₁,
                 β₂ = β₂,
                 ϵ = ϵ,
-                t = t,
                 seed = seed,
                 verbose = true, # setting this to true so that the user can still still some progress per training run
             )
@@ -519,6 +514,10 @@ function optim(
         n_burnin_epochs = par_n_burnin_epochs[idx],
         n_patient_epochs = par_n_patient_epochs[idx],
         optimiser = par_optimisers[idx],
+        η = η,
+        β₁ = β₁,
+        β₂ = β₂,
+        ϵ = ϵ,
         seed = seed,
         verbose = true,
     )
