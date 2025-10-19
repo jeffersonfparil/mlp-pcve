@@ -20,7 +20,7 @@ function main(args::Dict)::Vector{String}
     #     "epsilon" => 1e-8,
     #     "n-threads" => 2,
     #     "seed" => 42,
-    #     "output-prefix" => mlppcve,
+    #     "output-prefix" => "mlppcve",
     #     "verbose" => true,
     # )
     # Constant type which we may allow to be user-specified in the future
