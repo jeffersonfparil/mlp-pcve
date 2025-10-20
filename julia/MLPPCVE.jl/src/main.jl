@@ -47,6 +47,12 @@ function main(args::Dict)::Vector{String}
     seed = args["seed"]
     output_prefix = args["output-prefix"]
     verbose = args["verbose"]
+    # Check for existing output files 
+    fnames_output = readdir()
+    idx = findall(.!isnothing.(match.(Regex("^$(output_prefix)-"), fnames_output)) .&& .!isnothing.(match.(Regex(".jld2\$"), fnames_output)))
+    if length(idx) > 0
+        error("Please re/move the existing output file/s with the prefix: \"$(output_prefix)\".")
+    end
     # Read the trial data
     trial = readtrial(fname=fname, delimiter=delimiter, expected_labels_A=expected_labels_A)
     # Validate trait/s input
@@ -74,7 +80,7 @@ function main(args::Dict)::Vector{String}
         println("Fixed explanatory variables: $(fixed_explanatory_variables)")
         println("Non-fixed explanatory variables: $(nonfixed_explanatory_variables)")
     end
-    output = []
+    fnames_output = []
     idx_vars = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...)) # remove fixed variables
     for (j, trait) in enumerate(traits)
        # j = 1; trait = trial.labels_Y[j]
@@ -202,7 +208,7 @@ function main(args::Dict)::Vector{String}
         end
         println("##################################################")
         println(join(vcat("$(trait) | output files:", fnames_outputs), "\n\t‣ "))
-        output = vcat(output, fnames_outputs)
+        fnames_output = vcat(fnames_output, fnames_outputs)
     end
-    return fnames_outputs
+    return fnames_output
 end

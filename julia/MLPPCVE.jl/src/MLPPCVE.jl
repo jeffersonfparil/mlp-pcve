@@ -112,11 +112,11 @@ function args_parser()
             help = "Learning rate (step size) used to scale the parameter update (η::Float64 = 0.001)"
             arg_type = Float64
             default = 0.001
-        "--decay-rate-1", "-b"
+        "--decay-rate-1", "-r"
             help = "Exponential decay rate for the first moment (β₁::Float64 = 0.9)"
             arg_type = Float64
             default = 0.9
-        "--decay-rate-2", "-B"
+        "--decay-rate-2", "-R"
             help = "Exponential decay rate for the second moment (β₂::Float64 = 0.999)"
             arg_type = Float64
             default = 0.999
@@ -165,7 +165,7 @@ function args_parser()
         "opt-n-patient-epochs",
     ]
         args_output[k] = begin
-            a = []
+            a = Int64[]
             for b in split(strip(args[k], strip_these_chars), ",")
                 try
                     push!(a, parse(Int64, b))
@@ -181,7 +181,7 @@ function args_parser()
         "opt-dropout-per-hidden-layer",
     ]
         args_output[k] = begin
-            a = []
+            a = Float64[]
             for b in split(strip(args[k], strip_these_chars), ",")
                 try
                     push!(a, parse(Float64, b))
@@ -198,7 +198,7 @@ function args_parser()
         "opt-cost-functions",
     ]
         args_output[k] = begin
-            a = []
+            a::Vector{Dict{Symbol, Function}} = []
             for b in split(strip(args[k], strip_these_chars), ",")
                 f = if b == "relu"
                     push!(a, Dict(:F => relu, :∂F => relu_derivative))
