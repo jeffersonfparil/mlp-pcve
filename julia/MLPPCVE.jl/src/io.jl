@@ -145,7 +145,10 @@ function readtrial(;
     end
     # Extract header information, i.e. labels_A and labels_Y
     io = open(fname, "r")
-    header = String.(split(readline(io), delimiter))
+    header = begin
+        header = String.(split(readline(io), delimiter))
+        replace.(header, "#" => "")
+    end
     if length(header) < 2
         error("File \"$fname\" has less than 2 columns. Delimiter: \"$delimiter\" may not be correct.")
     end

@@ -4,6 +4,7 @@ function main(args::Dict)::Vector{String}
     #     "delimiter" => ",",
     #     "n-batches" => 2,
     #     "expected-labels-A" => ["years","seasons","harvests","sites","replications","entries","populations","blocks","rows","cols",],
+    #     "requested-contextualised-effects" => ["years-entries", "seasons-entries", "sites-entries", "years-seasons-sites-entries"],
     #     "traits" => [""],
     #     "opt-n-hidden-layers" => [0, 1, 2, 3],
     #     "opt-n-nodes-per-hidden-layer" => [128, 256],
@@ -29,6 +30,7 @@ function main(args::Dict)::Vector{String}
     delimiter = args["delimiter"]
     n_batches = args["n-batches"]
     expected_labels_A = args["expected-labels-A"]
+    requested_contextualised_effects = args["requested-contextualised-effects"]
     traits = args["traits"]
     opt_n_hidden_layers = args["opt-n-hidden-layers"]
     opt_n_nodes_per_hidden_layer = args["opt-n-nodes-per-hidden-layer"]
@@ -142,16 +144,15 @@ function main(args::Dict)::Vector{String}
             ϕ_nocontext = vcat(ϕ_nocontext, ϕ_tmp[:, 1])
         end
         # Extract contextualised effects
-        requested_contextualised_effects = ["seasons-entries", "sites-entries", "seasons-sites-entries"]
         Φ_context = Dict()
         for contextualised_effect in requested_contextualised_effects
-            # contextualised_effect = requested_contextualised_effects[3]
+            # contextualised_effect = requested_contextualised_effects[1]
             factors = String.(split(contextualised_effect, '-'))
             idx_factors = [findall(.!isnothing.(match.(Regex("^$factor"), trial.labels_X))) for factor in factors]
             idx_combinations = collect(Iterators.product(idx_factors...))
             x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
-            ϕ_tmp = []
-            ϕ_tmp_labels = []
+            ϕ_tmp = T[]
+            ϕ_tmp_labels = String[]
             for idx_combination in idx_combinations
                 # idx_combination = idx_combinations[1]
                 x_new .= 0.0

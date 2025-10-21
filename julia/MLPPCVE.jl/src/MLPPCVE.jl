@@ -68,6 +68,10 @@ function args_parser()
             help = ""
             arg_type = String
             default = "years,seasons,harvests,sites,replications,entries,populations,blocks,rows,cols"
+        "--requested-interaction-effects", "-E"
+            help = ""
+            arg_type = String
+            default = "years-entries,seasons-entries,sites-entries,years-seasons-sites-entries"
         "--traits", "-T"
             help = ""
             arg_type = String
@@ -155,6 +159,7 @@ function args_parser()
     args_output["delimiter"] = args["delimiter"]
     args_output["n-batches"] = args["n-batches"]
     args_output["expected-labels-A"] = String.(split(strip(args["expected-labels"], strip_these_chars), ","))
+    args_output["requested-contextualised-effects"] = String.(split(strip(args["requested-interaction-effects"], strip_these_chars), ","))
     args_output["traits"] = String.(split(strip(args["traits"], strip_these_chars), ","))
     # Vectors of Int64
     for k in [
