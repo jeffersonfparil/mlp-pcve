@@ -24,6 +24,7 @@ function main(args::Dict)::Vector{String}
     #     "output-prefix" => "mlppcve",
     #     "verbose" => true,
     # )
+    # # args["fname"] = "/home/jp3h/Documents/mlp-pcve/julia/test_empirical.tsv"; args["delimiter"] = "\t";
     # Constant type which we may allow to be user-specified in the future
     T::Type = Float32
     fname = args["fname"]
@@ -84,6 +85,14 @@ function main(args::Dict)::Vector{String}
     end
     fnames_output = []
     idx_vars = sort(vcat([findall(.!isnothing.(match.(Regex(x), trial.labels_X))) for x in nonfixed_explanatory_variables]...)) # remove fixed variables
+    if length(idx_vars) < 2
+        error("There is less than 2 non-fixed explanatory variables:\n\t‣ $(join(trial.labels_X[idx_vars], "\n\t‣ "))")
+    end
+    if length(idx_vars) < length(trial.labels_X)
+        idx_tmp = findall([!(x ∈ idx_vars) for x in collect(1:length(trial.labels_X))])
+        @warn("Dropped the following explanatory variable level/s:\n\t‣ $(join(trial.labels_X[idx_tmp], "\n\t‣ "))")
+    end
+    labels_X = trial.labels_X[idx_vars]
     for (j, trait) in enumerate(traits)
        # j = 1; trait = trial.labels_Y[j]
         if verbose
@@ -97,6 +106,14 @@ function main(args::Dict)::Vector{String}
             σ_y = std(hcat(y))[1,1]
             y = (y .- μ_y) ./ (σ_y .+ eps(T))
             (y, μ_y, σ_y, idx_obs)
+        end
+        if length(y) < 10
+            @warn("Skipped trait \"$trait\" because it does not have enough non-missing observations.")
+            continue
+        end
+        if σ_y < 1e-12
+            @warn("Skipped trait \"$trait\" because it does not have variation.")
+            continue
         end
         Xy::Dict{String,CuArray{T,2}} = Dict(
             "X" => CuArray(T.(trial.X[idx_obs, idx_vars]')), 
@@ -129,15 +146,16 @@ function main(args::Dict)::Vector{String}
         ϕ_nocontext_labels::Vector{String} = []
         x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
         for explanatory_variable in nonfixed_explanatory_variables
-            # explanatory_variable = nonfixed_explanatory_variables[3]
-            idx = findall(.!isnothing.(match.(Regex("^$explanatory_variable"), trial.labels_X)))
+            # explanatory_variable = nonfixed_explanatory_variables[end]
+            # @show explanatory_variable
+            idx = findall(.!isnothing.(match.(Regex("^$explanatory_variable"), labels_X)))
             ϕ_tmp = []
             for i in idx
                 # i = idx[1]
                 x_new .= 0.0
                 x_new[i, :] .= 1.0
                 push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
-                push!(ϕ_nocontext_labels, trial.labels_X[i])
+                push!(ϕ_nocontext_labels, labels_X[i])
             end
             # Standardised effects within each explanatory variable
             ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ (std(hcat(ϕ_tmp)) .+ eps(Float64)) # add ϵ to avoid NaNsS
@@ -148,7 +166,7 @@ function main(args::Dict)::Vector{String}
         for contextualised_effect in requested_contextualised_effects
             # contextualised_effect = requested_contextualised_effects[1]
             factors = String.(split(contextualised_effect, '-'))
-            idx_factors = [findall(.!isnothing.(match.(Regex("^$factor"), trial.labels_X))) for factor in factors]
+            idx_factors = [findall(.!isnothing.(match.(Regex("^$factor"), labels_X))) for factor in factors]
             idx_combinations = collect(Iterators.product(idx_factors...))
             x_new = CuArray(zeros(T, size(Xy["X"], 1), 1))
             ϕ_tmp = T[]
@@ -160,8 +178,8 @@ function main(args::Dict)::Vector{String}
                     x_new[i, :] .= 1.0
                 end
                 push!(ϕ_tmp, Matrix(predict(dl_optim["Full_fit"]["Ω"], x_new))[1, 1])
-                # push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '-'))
-                push!(ϕ_tmp_labels, join(trial.labels_X[collect(idx_combination)], '\t'))
+                # push!(ϕ_tmp_labels, join(labels_X[collect(idx_combination)], '-'))
+                push!(ϕ_tmp_labels, join(labels_X[collect(idx_combination)], '\t'))
             end
             # Standardised effects within each combination of explanatory variables
             ϕ_tmp = (ϕ_tmp .- mean(hcat(ϕ_tmp))) ./ std(hcat(ϕ_tmp))

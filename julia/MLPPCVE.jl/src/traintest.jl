@@ -469,7 +469,7 @@ function optim(
             actual_n_epochs[i] = length(dl["loss_training"])
             mse[i] = Float64(dl["metrics_validation"]["mse"])
             p = Int(round(100 * sum(.!isnan.(mse)) / P))
-            print("\r$(repeat("█", p)) | $p% hyperparam. optim.")
+            print("\r$(repeat("█", p)) | $p% hyperparameter optimisation.\n")
         end
     end
     println("")
