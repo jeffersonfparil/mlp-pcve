@@ -1,3 +1,8 @@
+"""
+    linear(x::T)::T where {T<:AbstractFloat}
+
+Linear activation function that returns the input value unchanged.
+"""
 function linear(x::T)::T where {T<:AbstractFloat}
     x
 end

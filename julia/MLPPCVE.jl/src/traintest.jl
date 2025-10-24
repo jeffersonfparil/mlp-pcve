@@ -1,3 +1,27 @@
+"""
+    splitdata(Xy::Dict{String,CuArray{T,2}}; n_batches::Int64 = 10, seed::Int64 = 42)::Dict{String,CuArray{T,2}} where {T<:AbstractFloat}
+
+Split input data into training batches and a validation set.
+
+# Arguments
+- `Xy::Dict{String,CuArray{T,2}}`: Dictionary containing input features 'X' and target values 'y' as CuArrays
+- `n_batches::Int64=10`: Number of batches to split the data into (default: 10)
+- `seed::Int64=42`: Random seed for reproducibility (default: 42)
+
+# Returns
+- `Dict{String,CuArray{T,2}}`: Dictionary containing split data with keys:
+    - "X_batch_i", "y_batch_i" for i in 1:(n_batches-1) for training batches
+    - "X_validation", "y_validation" for the validation set
+
+# Notes
+- The last batch is always used as the validation set
+- Data is randomly shuffled before splitting
+- Batch sizes are approximately equal
+
+# Throws
+- `ArgumentError`: If number of samples is less than or equal to n_batches
+- `ArgumentError`: If number of samples is less than 2
+"""
 function splitdata(
     Xy::Dict{String,CuArray{T,2}};
     n_batches::Int64 = 10, # with the last batch used for validation
@@ -40,6 +64,29 @@ function splitdata(
     out
 end
 
+"""
+    predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
+
+Perform forward propagation through the neural network to generate predictions.
+
+# Arguments
+- `Ω::Network{T}`: Neural network structure containing weights, biases and activation function
+- `X::CuArray{T,2}`: Input data matrix on GPU where T is an AbstractFloat type
+
+# Returns
+- `CuArray{T,2}`: Predicted output matrix on GPU
+
+# Details
+For networks with no hidden layers (linear regression), applies:
+    y = Wx + b
+
+For networks with hidden layers, iteratively applies:
+    h_i = F(W_i * h_{i-1} + b_i)
+where F is the activation function, and h_0 = x
+
+The final layer always applies a linear transformation without activation:
+    y = W_final * h_final + b_final
+"""
 function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
     # No hidden layer (i.e. linear regression)
     if Ω.n_hidden_layers == 0
@@ -53,13 +100,64 @@ function predict(Ω::Network{T}, X::CuArray{T,2})::CuArray{T,2} where {T<:Abstra
     (Ω.W[end] * a) .+ Ω.b[end]
 end
 
-# dl = train(simulate())
-# dl = train(simulate(), n_hidden_layers=2)
-# dl = train(simulate(), fit_full=true)
-# dl = train(simulate(), n_batches=5)
-# dl = train(simulate(), F=leakyrelu)
-# dl = train(simulate(), F=tanh)
-# dl = train(simulate(), F=sigmoid)
+"""
+    train(Xy::Dict{String,CuArray{T,2}}; kwargs...)::Dict{String,Union{Network{T},Vector{T},Dict{String,T}}} where {T<:AbstractFloat}
+
+Train a neural network using the provided data and specified parameters.
+
+# Arguments
+- `Xy::Dict{String,CuArray{T,2}}`: Dictionary containing input features ("X") and target values ("y") as CuArrays
+
+# Keywords
+- `n_batches::Union{Int64,Nothing}=nothing`: Number of batches for training; auto-calculated if nothing
+- `fit_full::Bool=false`: If true, fits model on full data without validation set
+- `n_hidden_layers::Int64=3`: Number of hidden layers in the network
+- `n_hidden_nodes::Vector{Int64}`: Number of nodes in each hidden layer
+- `dropout_rates::Vector{Float64}`: Dropout rates for each hidden layer
+- `F::Function=relu`: Activation function
+- `∂F::Function=relu_derivative`: Derivative of activation function
+- `C::Function=MSE`: Cost function
+- `∂C::Function=MSE_derivative`: Derivative of cost function
+- `n_epochs::Int64=10_000`: Maximum number of training epochs
+- `n_burnin_epochs::Int64=100`: Number of initial epochs before early stopping
+- `n_patient_epochs::Int64=5`: Number of epochs to wait for improvement before early stopping
+- `optimiser::String="Adam"`: Optimization algorithm ("GD", "Adam", or "AdamMax")
+- `η::Float64=0.001`: Learning rate
+- `β₁::Float64=0.900`: First moment decay rate for Adam/AdamMax
+- `β₂::Float64=0.999`: Second moment decay rate for Adam/AdamMax
+- `ϵ::Float64=1e-8`: Small constant for numerical stability
+- `seed::Int64=42`: Random seed for reproducibility
+- `verbose::Bool=true`: Whether to print training progress
+
+# Returns
+Dictionary containing:
+- `"Ω"`: Trained network
+- `"y_true"`: True target values
+- `"y_pred"`: Predicted values
+- `"loss_training"`: Training loss history
+- `"loss_validation"`: Validation loss history
+- `"metrics_training"`: Training metrics
+- `"metrics_validation"`: Validation metrics
+- `"metrics_training_ols"`: OLS training metrics
+- `"metrics_validation_ols"`: OLS validation metrics
+
+# Notes
+- Input features X should be standardized (μ=0, σ=1)
+- Uses GPU acceleration with CUDA
+- Implements early stopping based on both training and validation loss
+- Includes OLS as a reference model
+
+# Examples
+```julia
+dl = train(simulate())
+dl = train(simulate(), n_hidden_layers=2)
+dl = train(simulate(), fit_full=true)
+dl = train(simulate(), n_batches=5)
+dl = train(simulate(), F=leakyrelu)
+dl = train(simulate(), F=tanh)
+dl = train(simulate(), F=sigmoid)
+```
+"""
 function train(
     Xy::Dict{String,CuArray{T,2}}; # It it recommended that X be standardised (μ=0, and σ=1)
     n_batches::Union{Int64,Nothing} = nothing, # if nothing, it will be calculated based on available GPU memory
@@ -220,9 +318,9 @@ function train(
         push!(epochs, i)
         push!(loss_training, Θ_training["mse"])
         push!(loss_validation, Θ_validation["mse"])
-        # After burn-in epoches: stop early if validation loss does not improve within within n_patient_epochs
+        # After burn-in epoches: stop early if validation loss does not improve after n_patient_epochs
         if i > n_burnin_epochs
-            if (i >= n_patient_epochs) &&
+            if (i > n_patient_epochs) &&
                ((loss_validation[end] - loss_validation[(end-n_patient_epochs)+1]) >= 0.0)
                 if verbose
                     println(
@@ -297,31 +395,66 @@ function train(
     )
 end
 
-# n_batches::Int64 = 2
-# D = splitdata(simulate(n=62_123, p=197, l=5), n_batches=n_batches);
-# Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
-# @time dl_opt = optim(
-#     Xy, 
-#     n_batches=n_batches,
-#     opt_n_hidden_layers=collect(0:5),
-#     opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
-#     opt_dropout_per_hidden_layer=[0.0],
-#     opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
-#     opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
-#     opt_n_epochs=[10_000],
-#     opt_n_burnin_epochs=[100, 1_000],
-#     opt_n_patient_epochs=[5, 10],
-#     opt_optimisers=["Adam"],
-#     n_threads=n_batches,
-# )
-# ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
-# y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-# X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
-# b_hat = X_training \ y_training;
-# y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
-# metrics_mlp = metrics(ŷ, D["y_validation"])
-# metrics_ols = metrics(y_hat, D["y_validation"])
-# (metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
+"""
+    optim(Xy::Dict{String,CuArray{T,2}}; kwargs...) where {T<:AbstractFloat} -> Dict{String,Dict{String}}
+
+Perform hyperparameter optimization for a neural network using grid search.
+
+# Arguments
+- `Xy::Dict{String,CuArray{T,2}}`: Dictionary containing input features "X" and target values "y" as CuArrays
+
+# Keywords
+- `n_batches::Int64=10`: Number of batches for training/validation split (minimum 2)
+- `opt_n_hidden_layers::Vector{Int64}=collect(1:3)`: Vector of hidden layer counts to try
+- `opt_n_nodes_per_hidden_layer::Vector{Int64}=[size(Xy["X"],1)-i for i in [0,1]]`: Vector of node counts per hidden layer to try
+- `opt_dropout_per_hidden_layer::Vector{Float64}=[0.0]`: Vector of dropout rates to try
+- `opt_F_∂F::Vector{Dict{Symbol,Function}}`: Vector of activation function/derivative pairs to try
+- `opt_C_∂C::Vector{Dict{Symbol,Function}}`: Vector of cost function/derivative pairs to try 
+- `opt_n_epochs::Vector{Int64}=[1_000,10_000]`: Vector of epoch counts to try
+- `opt_n_burnin_epochs::Vector{Int64}=[100]`: Vector of burn-in epoch counts to try
+- `opt_n_patient_epochs::Vector{Int64}=[5]`: Vector of patience epoch counts to try
+- `opt_optimisers::Vector{String}=["Adam"]`: Vector of optimizers to try
+- `η::Float64=0.001`: Learning rate
+- `β₁::Float64=0.900`: First moment decay rate for Adam
+- `β₂::Float64=0.999`: Second moment decay rate for Adam  
+- `ϵ::Float64=1e-8`: Small constant for numerical stability
+- `n_threads::Int64=1`: Number of threads for parallel optimization
+- `seed::Int64=42`: Random seed
+
+# Returns
+Dictionary containing:
+- "Full_fit": Results from training with best parameters
+- "Hyperparameter_search_space": Full parameter search space and results
+
+# Examples
+```julia
+n_batches::Int64 = 2
+D = splitdata(simulate(n=62_123, p=197, l=5), n_batches=n_batches);
+Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
+@time dl_opt = optim(
+    Xy, 
+    n_batches=n_batches,
+    opt_n_hidden_layers=collect(0:5),
+    opt_n_nodes_per_hidden_layer=[size(Xy["X"], 1)-i for i in [0]],
+    opt_dropout_per_hidden_layer=[0.0],
+    opt_F_∂F=[Dict(:F => relu, :∂F => relu_derivative), Dict(:F => leakyrelu, :∂F => leakyrelu_derivative)],
+    opt_C_∂C=[Dict(:C => MSE, :∂C => MSE_derivative)],
+    opt_n_epochs=[10_000],
+    opt_n_burnin_epochs=[100, 1_000],
+    opt_n_patient_epochs=[5, 10],
+    opt_optimisers=["Adam"],
+    n_threads=n_batches,
+)
+ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
+y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
+X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
+b_hat = X_training \\ y_training;
+y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
+metrics_mlp = metrics(ŷ, D["y_validation"])
+metrics_ols = metrics(y_hat, D["y_validation"])
+(metrics_mlp["ρ"] > metrics_ols["ρ"]) && (metrics_mlp["R²"] > metrics_ols["R²"]) && (metrics_mlp["rmse"] < metrics_ols["rmse"])
+```
+"""
 function optim(
     Xy::Dict{String,CuArray{T,2}};
     n_batches::Int64 = 10,

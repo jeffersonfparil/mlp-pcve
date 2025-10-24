@@ -1,3 +1,27 @@
+"""
+    forwardpass!(Ω::Network{T}) where {T<:AbstractFloat} -> Nothing
+
+Perform a forward pass through a neural network with dropout.
+
+# Arguments
+- `Ω::Network{T}`: Network structure containing weights, biases, activations, and other network parameters
+
+# Details
+The function:
+1. Applies dropout masks randomly based on specified dropout rates
+2. Computes linear transformations (W*A + b) for each layer
+3. Applies activation functions between layers
+4. Stores final output in Ω.ŷ
+
+# Side Effects
+- Modifies the network object `Ω` in-place, updating activations (`Ω.A`), 
+  pre-activations (`Ω.S`), and predictions (`Ω.ŷ`)
+- Uses CUDA for GPU acceleration
+- Sets random seed from Ω.seed for reproducibility
+
+# Returns
+- `Nothing`: Function modifies the network in-place
+"""
 function forwardpass!(Ω::Network{T})::Nothing where {T<:AbstractFloat}
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X)
     Random.seed!(Ω.seed)
@@ -12,6 +36,33 @@ function forwardpass!(Ω::Network{T})::Nothing where {T<:AbstractFloat}
     nothing
 end
 
+"""
+    backpropagation!(Ω::Network{T}, y::CuArray{T,2}) where {T<:AbstractFloat}
+
+Perform the backpropagation algorithm to compute gradients in a neural network.
+
+# Arguments
+- `Ω::Network{T}`: Network object containing weights, biases, activations, and other network parameters
+- `y::CuArray{T,2}`: Target/ground truth values as a GPU array
+
+# Details
+Implements the backpropagation algorithm to compute gradients for network parameters:
+1. Computes initial error at output layer
+2. Propagates error backwards through the network using chain rule
+3. Computes gradients for weights (∇W) and biases (∇b) at each layer
+
+The function updates the following fields in the Network object:
+- `Ω.∇W`: Weight gradients
+- `Ω.∇b`: Bias gradients
+
+# Implementation Notes
+- Uses chain rule to compute gradients: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)
+- Operates on GPU arrays (CuArray) for efficient computation
+- Includes commented-out options for L2 regularization and batch normalization
+
+# Returns
+- `Nothing`: Function modifies the network in-place
+"""
 function backpropagation!(Ω::Network{T}, y::CuArray{T,2})::Nothing where {T<:AbstractFloat}
     # T = Float32; X = CuArray{T, 2}(rand(Bool, 1_000, 25)); Ω = init(X); y = CUDA.randn(1, size(X, 2))
     # Cost gradients with respect to (w.r.t.) the weights: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)

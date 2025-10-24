@@ -46,10 +46,6 @@ export gradientdescent!, Adam!, AdamMax!
 export splitdata, predict, train, optim
 export main
 
-# Testing
-# TODO: 
-#   - improve argument parsing
-#   - add trait selection
 function args_parser()
     s = ArgParseSettings()
     @add_arg_table! s begin
@@ -65,83 +61,83 @@ function args_parser()
             arg_type = Int
             default = 2
         "--expected-labels", "-L"
-            help = ""
+            help = "Comma-separated list of expected labels or factors in the input file excluding the trait names."
             arg_type = String
             default = "years,seasons,harvests,sites,replications,entries,populations,blocks,rows,cols"
         "--requested-interaction-effects", "-E"
-            help = ""
+            help = "Comma-separated list interaction effects (factors are separated by dashes) to compute in addition to the no-context effects of all individual factors listed in `--expected-labels`."
             arg_type = String
             default = "years-entries,seasons-entries,sites-entries,years-seasons-sites-entries"
         "--traits", "-T"
-            help = ""
+            help = "Comma-separated list of traits to model individually. Leave blank to include all traits assuming all other columns except those listed in `--expected-labels` are numeric."
             arg_type = String
             default = ""
         "--opt-n-hidden-layers"
-            help = ""
+            help = "Comma-separated list of numbers of hidden layers to use in hyperparameter tuning."
             arg_type = String
             default = "0,1,2,3"
         "--opt-n-nodes-per-hidden-layer"
-            help = ""
+            help = "Comma-separated list of numbers of nodes per hidden layer to use in hyperparameter tuning."
             arg_type = String
             default = "128,256"
         "--opt-dropout-per-hidden-layer"
-            help = ""
+            help = "Comma-separated list of dropout rates per hidden layer to use in hyperparameter tuning."
             arg_type = String
             default = "0.0"
         "--opt-n-epochs"
-            help = ""
+            help = "Comma-separated list of numbers of epochs to use in hyperparameter tuning."
             arg_type = String
             default = "1000"
         "--opt-n-burnin-epochs"
-            help = ""
+            help = "Comma-separated list of numbers of burn-in epochs (number of epochs to run before considering early stopping criteria) to use in hyperparameter tuning."
             arg_type = String
             default = "10,100"
         "--opt-n-patient-epochs"
-            help = ""
+            help = "Comma-separated list of numbers of patient epochs to use in hyperparameter tuning."
             arg_type = String
             default = "5"
         "--opt-activation-functions", "-F"
-            help = "Activiation functions. Select from:, \"relu\", \"leakyrelu\", \"linear\", \"sigmoid\", and \"hyperbolictangent\"."
+            help = "Comma-separated list of activation functions. Select from: \n\t- \"relu\"\n\t- \"leakyrelu\"\n\t- \"linear\"\n\t- \"sigmoid\"\n\t- \"hyperbolictangent\""
             arg_type = String
             default = "relu,leakyrelu"
         "--opt-cost-functions", "-C"
-            help = "Cost functions. Select from:, \"MSE\", \"MAE\", and \"HL\"."
+            help = "Comma-separated list of cost functions. Select from: \n\t- \"MSE\"\n\t- \"MAE\"\n\t- \"HL\""
             arg_type = String
             default = "MSE"
         "--opt-optimisers"
-            help = ""
+            help = "Comma-separated list of optimisers. Select from: \n\t - \"Adam\"\n\t - \"AdamMax\"\n\t - \"gradientdescent\""
             arg_type = String
             default = "Adam"
         "--learn-rate", "-n"
-            help = "Learning rate (step size) used to scale the parameter update (η::Float64 = 0.001)"
+            help = "Learning rate (step size) used to scale the parameter update"
             arg_type = Float64
             default = 0.001
         "--decay-rate-1", "-r"
-            help = "Exponential decay rate for the first moment (β₁::Float64 = 0.9)"
+            help = "Exponential decay rate for the first moment"
             arg_type = Float64
             default = 0.9
         "--decay-rate-2", "-R"
-            help = "Exponential decay rate for the second moment (β₂::Float64 = 0.999)"
+            help = "Exponential decay rate for the second moment"
             arg_type = Float64
             default = 0.999
         "--epsilon", "-e"
-            help = "Numerical stability constant, i.e. a small number added to the denominator during optimisation to prevent singularities (ϵ::Float64 = 1e-8)"
+            help = "Numerical stability constant, i.e. a small number added to the denominator during optimisation to prevent singularities"
             arg_type = Float64
             default = 1e-8
         "--n-threads", "-t"
-            help = ""
+            help = "Number of CPU threads to use"
             arg_type = Int64
             default = 2
         "--seed", "-s"
-            help = ""
+            help = "Randomisation seed for repeatability"
             arg_type = Int64
             default = 42
         "--output-prefix", "-o"
-            help = ""
+            help = "Prefix of the output files which can include directory names."
             arg_type = String
             default = "mlppcve"
         "--silent"
-            help = ""
+            help = "Show progress messages"
             action = :store_true
     end
     args = parse_args(s)

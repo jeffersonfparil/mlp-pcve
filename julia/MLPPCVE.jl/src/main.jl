@@ -1,3 +1,55 @@
+"""
+    main(args::Dict)::Vector{String}
+
+Main function for using deep learning to analyse field crop trials.
+
+# Arguments
+- `args::Dict`: A dictionary containing configuration parameters including:
+  - `fname`: Input file path containing trial data
+  - `delimiter`: Field separator in input file
+  - `n-batches`: Number of batches for training
+  - `expected-labels-A`: Vector of expected column names for explanatory variables
+  - `requested-contextualised-effects`: Vector of combinations for contextual effects
+  - `traits`: Vector of trait names to analyze
+  - `opt-n-hidden-layers`: Vector of hidden layer numbers to try
+  - `opt-n-nodes-per-hidden-layer`: Vector of node numbers per hidden layer to try
+  - `opt-dropout-per-hidden-layer`: Vector of dropout rates to try
+  - `opt-n-epochs`: Vector of training epochs to try
+  - `opt-n-burnin-epochs`: Vector of burn-in epochs to try
+  - `opt-n-patient-epochs`: Vector of patience epochs for early stopping
+  - `opt-optimisers`: Vector of optimizer names
+  - `opt-activation-functions`: Vector of activation function dictionaries
+  - `opt-cost-functions`: Vector of cost function dictionaries
+  - `learn-rate`: Learning rate for optimization
+  - `decay-rate-1`: First moment decay rate (β₁)
+  - `decay-rate-2`: Second moment decay rate (β₂)
+  - `epsilon`: Small constant for numerical stability
+  - `n-threads`: Number of threads for parallel processing
+  - `seed`: Random seed for reproducibility
+  - `output-prefix`: Prefix for output files
+  - `verbose`: Boolean for detailed output
+
+# Returns
+- `Vector{String}`: Vector of output file paths generated during the analysis
+
+# Description
+The function performs the following main steps:
+1. Validates and processes input parameters
+2. Reads and preprocesses trial data
+3. Identifies fixed and non-fixed explanatory variables
+4. For each trait:
+   - Standardises the data
+   - Trains the multi-layer perceptron with automated hyperparameter tuning
+   - Extracts standardised uncontextualised and contextualized (interaction) effects
+   - Saves results in:
+        + JLD2 (HDF5-compatible format) for the model, and 
+        + TSV (tab-delimited formats) for the standardised effects/predictions.
+
+# Notes
+- Requires GPU support (CUDA arrays)
+- Uses standardisation for both input and output variables
+- Implements early stopping and model optimisation
+"""
 function main(args::Dict)::Vector{String}
     # args = Dict(
     #     "fname" => writetrial(simulatetrial(verbose=false)),
