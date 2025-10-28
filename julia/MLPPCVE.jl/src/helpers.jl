@@ -1,43 +1,4 @@
 """
-A struct representing a feedforward neural network.
-
-# Fields
-- `n_hidden_layers::Int64`: Number of hidden layers.
-- `n_hidden_nodes::Vector{Int64}`: Number of nodes in each hidden layer.
-- `dropout_rates::Vector{T}`: Dropout rates for each hidden layer.
-- `W::Vector{CuArray{T, 2}}`: Weight matrices for each layer.
-- `b::Vector{CuArray{T, 1}}`: Bias vectors for each layer.
-- `ŷ::CuArray{T, 2}`: Output predictions of the network.
-- `S::Vector{CuArray{T, 2}}`: Pre-activation values (weighted sums).
-- `A::Vector{CuArray{T, 2}}`: Activations for each layer including input.
-- `∇W::Vector{CuArray{T, 2}}`: Gradients of weights.
-- `∇b::Vector{CuArray{T, 1}}`: Gradients of biases.
-- `F::Function`: Activation function.
-- `∂F::Function`: Derivative of the activation function.
-- `C::Function`: Cost function.
-- `∂C::Function`: Derivative of the cost function.
-- `seed::Int64`: Random seed for reproducibility.
-"""
-struct Network{T}
-    n_hidden_layers::Int64 # number of hidden layers
-    n_hidden_nodes::Vector{Int64} # number of nodes per hidden layer
-    dropout_rates::Vector{T} # soft dropout rates per hidden layer
-    W::Vector{CuArray{T,2}} # weights
-    b::Vector{CuArray{T,1}} # biases
-    ŷ::CuArray{T,2} # predictions
-    S::Vector{CuArray{T,2}} # summed weights (i.e. prior to activation function)
-    A::Vector{CuArray{T,2}} # activation function output including the input layer as the first element
-    ∇W::Vector{CuArray{T,2}} # gradients of the weights
-    ∇b::Vector{CuArray{T,1}} # gradients of the biases
-    F::Function # activation function
-    ∂F::Function # derivative of the activation function
-    C::Function # cost function
-    ∂C::Function # derivative of the cost function
-    seed::Int64 # random seed for dropouts
-end
-
-
-"""
 Computes the mean of a matrix along the specified dimension.
 
 # Arguments
@@ -182,8 +143,62 @@ function drawreplacenot(N::T, n::T)::Vector{T} where {T<:Integer}
 end
 
 
+"""
+A struct representing a feed-forward neural network.
+
+# Fields
+- `n_hidden_layers::Int64`: Number of hidden layers.
+- `n_hidden_nodes::Vector{Int64}`: Number of nodes in each hidden layer.
+- `dropout_rates::Vector{T}`: Dropout rates for each hidden layer.
+- `W::Vector{CuArray{T, 2}}`: Weight matrices for each layer.
+- `b::Vector{CuArray{T, 1}}`: Bias vectors for each layer.
+- `ŷ::CuArray{T, 2}`: Output predictions of the network.
+- `S::Vector{CuArray{T, 2}}`: Pre-activation values (weighted sums).
+- `A::Vector{CuArray{T, 2}}`: Activations for each layer including input.
+- `∇W::Vector{CuArray{T, 2}}`: Gradients of weights.
+- `∇b::Vector{CuArray{T, 1}}`: Gradients of biases.
+- `F::Function`: Activation function.
+- `∂F::Function`: Derivative of the activation function.
+- `C::Function`: Cost function.
+- `∂C::Function`: Derivative of the cost function.
+- `seed::Int64`: Random seed for reproducibility.
+
+# Note
+See `init(::CuArray{T,2}; ...)` function for network initialization.
+"""
+struct Network{T}
+    n_hidden_layers::Int64 # number of hidden layers
+    n_hidden_nodes::Vector{Int64} # number of nodes per hidden layer
+    dropout_rates::Vector{T} # soft dropout rates per hidden layer
+    W::Vector{CuArray{T,2}} # weights
+    b::Vector{CuArray{T,1}} # biases
+    ŷ::CuArray{T,2} # predictions
+    S::Vector{CuArray{T,2}} # summed weights (i.e. prior to activation function)
+    A::Vector{CuArray{T,2}} # activation function output including the input layer as the first element
+    ∇W::Vector{CuArray{T,2}} # gradients of the weights
+    ∇b::Vector{CuArray{T,1}} # gradients of the biases
+    F::Function # activation function
+    ∂F::Function # derivative of the activation function
+    C::Function # cost function
+    ∂C::Function # derivative of the cost function
+    seed::Int64 # random seed for dropouts
+end
+
 
 """
+    init(
+        X::CuArray{T,2};
+        n_hidden_layers::Int64 = 2,
+        n_hidden_nodes::Vector{Int64} = repeat([256], n_hidden_layers),
+        dropout_rates::Vector{Float64} = repeat([0.0], n_hidden_layers),
+        F::Function = relu,
+        ∂F::Function = relu_derivative,
+        C::Function = MSE,
+        ∂C::Function = MSE_derivative,
+        y::Union{Nothing,CuArray{T,2}} = nothing,
+        seed::Int64 = 42,
+    )::Network{T} where {T<:AbstractFloat}
+
 Initializes a neural network with specified architecture and parameters.
 
 # Arguments
