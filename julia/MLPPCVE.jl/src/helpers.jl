@@ -9,13 +9,21 @@ Computes the mean of a matrix along the specified dimension.
 - `Matrix{T}`: Mean values along the specified dimension.
 
 # Examples
-```jldoctest
+```jldoctest; setup = :(using MLPPCVE)
 julia> X = rand(10, 42);
 
 julia> sum(mean(X, dims=1) .> 0.0) == 42
 true
 
 julia> sum(mean(X, dims=2) .> 0.0) == 10
+true
+
+julia> Y = zeros(10, 42);
+
+julia> sum(mean(Y, dims=1) .== 0.0) == 42
+true
+
+julia> sum(mean(Y, dims=2) .== 0.0) == 10
 true
 ```
 """
@@ -37,6 +45,25 @@ Computes the sample variance of a matrix along the specified dimension.
 
 # Returns
 - `Matrix{T}`: Variance values along the specified dimension.
+
+# Examples
+```jldoctest; setup = :(using MLPPCVE)
+julia> X = rand(10, 42);
+
+julia> sum(var(X, dims=1) .> 0.0) == 42
+true
+
+julia> sum(var(X, dims=2) .> 0.0) == 10
+true
+
+julia> Y = zeros(10, 42);
+
+julia> sum(var(Y, dims=1) .== 0.0) == 42
+true
+
+julia> sum(var(Y, dims=2) .== 0.0) == 10
+true
+```
 """
 function var(X::Matrix{T}; dims::Int64 = 1)::Matrix{T} where {T<:AbstractFloat}
     # X = rand(10, 4)
@@ -57,6 +84,25 @@ Computes the sample standard deviation of a matrix along the specified dimension
 
 # Returns
 - `Matrix{T}`: Standard deviation values.
+
+# Examples
+```jldoctest; setup = :(using MLPPCVE)
+julia> X = rand(10, 42);
+
+julia> sum(std(X, dims=1) .> 0.0) == 42
+true
+
+julia> sum(std(X, dims=2) .> 0.0) == 10
+true
+
+julia> Y = zeros(10, 42);
+
+julia> sum(std(Y, dims=1) .== 0.0) == 42
+true
+
+julia> sum(std(Y, dims=2) .== 0.0) == 10
+true
+```
 """
 function std(X::Matrix{T}; dims::Int64 = 1)::Matrix{T} where {T<:AbstractFloat}
     sqrt.(var(X, dims = dims))
@@ -73,6 +119,16 @@ Computes the sample covariance between two matrices along the specified dimensio
 
 # Returns
 - `Matrix
+
+# Examples
+```jldoctest; setup = :(using MLPPCVE)
+julia> X = rand(10, 42);
+
+julia> Y = rand(10, 42);
+
+julia> sum(cov(X, Y) .!= 0.0) == 42
+true
+```
 """
 function cov(
     X::Matrix{T},
@@ -101,6 +157,17 @@ Generates samples from a standard normal distribution using the Box-Muller trans
 
 # Returns
 - `Vector{T}`: Vector of normally distributed samples.
+
+# Examples
+```jldoctest; setup = :(using MLPPCVE)
+julia> x = sampleNormal(1_000, μ=0.0,σ=1.00);
+
+julia> abs(mean(hcat(x), dims=1)[1,1]) < 0.1
+true
+
+julia> abs(1.00 - std(hcat(x), dims=1)[1,1]) < 0.1
+true
+```
 """
 function sampleNormal(
     n::Int64;
@@ -126,6 +193,24 @@ Draws `n` unique samples from `N` elements without replacement.
 
 # Returns
 - `Vector{T}`: Vector of unique sampled indices.
+
+# Examples
+```jldoctest; setup = :(using MLPPCVE)
+julia> x = drawreplacenot(100, 100);
+
+julia> length(x) == 100
+
+julia> sum(x) == 101*50
+true
+
+julia> X = [drawreplacenot(100, 10) for _ in 1:1_000];
+
+julia> unique([length(x) for x in X]) == [10]
+true
+
+julia> abs(50.0 - mean(hcat([mean(hcat(Float64.(x)), dims=1)[1,1] for x in X]))[1,1]) < 10.0
+true
+```
 """
 function drawreplacenot(N::T, n::T)::Vector{T} where {T<:Integer}
     # N=1_000; n=12; T = Int64

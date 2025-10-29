@@ -430,7 +430,7 @@ Dictionary containing:
 ```julia
 n_batches::Int64 = 2
 D = splitdata(simulate(n=62_123, p=197, l=5), n_batches=n_batches);
-Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_$i"] for i in 1:(n_batches-1)]...),);
+Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}} = Dict("X" => hcat([D["X_batch_\$i"] for i in 1:(n_batches-1)]...),"y" => hcat([D["y_batch_\$i"] for i in 1:(n_batches-1)]...),);
 @time dl_opt = optim(
     Xy, 
     n_batches=n_batches,
@@ -446,8 +446,8 @@ Xy::Dict{String, CuArray{typeof(Vector(view(D["X_validation"], 1, 1:1))[1]), 2}}
     n_threads=n_batches,
 )
 ŷ = predict(dl_opt["Full_fit"]["Ω"], D["X_validation"]);
-y_training = vcat([Matrix(D["y_batch_$i"])[1, :] for i in 1:(n_batches-1)]...);
-X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_$i"])' for i in 1:(n_batches-1)]...));
+y_training = vcat([Matrix(D["y_batch_\$i"])[1, :] for i in 1:(n_batches-1)]...);
+X_training = hcat(ones(length(y_training)), hcat([Matrix(D["X_batch_\$i"])' for i in 1:(n_batches-1)]...));
 b_hat = X_training \\ y_training;
 y_hat::CuArray{Float32, 2} = CuArray{typeof(b_hat[1]), 2}(hcat(hcat(ones(size(D["X_validation"], 2)), Matrix(D["X_validation"])') * b_hat)');
 metrics_mlp = metrics(ŷ, D["y_validation"])
