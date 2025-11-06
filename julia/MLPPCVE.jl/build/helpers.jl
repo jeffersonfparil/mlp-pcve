@@ -481,12 +481,12 @@ Simulates input and output data for training a neural network.
 - `Dict{String, CuArray{T, 2}}`: Dictionary containing input `X` and output `y`.
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> Xy = simulate(n=123);
+```jldoctest; setup = :(using MLPPCVE)
+julia> Xy = simulate();
 
-julia> ŷ = CuArray(Float32.(reshape(sampleNormal(123, seed=456), (1, 123))));
+julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> M = metrics(ŷ, Xy["y"]);
+julia> M = metrics(ŷ, y);
 
 julia> (abs(M["ρ"]) < 0.5) && (M["R²"] < 0.5)
 true
@@ -600,7 +600,7 @@ The Levenshtein distance is a measure of the minimum number of single-character 
 - `Int64`: The minimum number of edits needed to transform string `a` into string `b`
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
+```jldoctest; setup = :(using GenomicBreedingIO)
 julia> levenshteindistance("populations", "populations")
 0
 
@@ -658,7 +658,7 @@ string inputs (e.g., `"#chr"` is replaced with `"chrom"`) before comparison.
 - `Bool`: `true` if the strings match within the threshold, `false` otherwise
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
+```jldoctest; setup = :(using GenomicBreedingIO)
 julia> isfuzzymatch("populations", "populations")
 true
 
@@ -780,7 +780,7 @@ matrix and a human-readable string matrix representing the trial layout.
 - Throws an error if the product of rows and columns doesn't equal the total number of plots
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
+```jldoctest; setup = :(using GenomicBreedingIO)
 julia> trial = inittrial(n_entries=100, n_populations=3, n_replications=5, years=["2025-2026"], seasons=["LateSpring"], harvests=["1"], sites=["Control", "Drought"]);
 
 julia> size(trial.A)
@@ -986,7 +986,7 @@ Simulate a linear trait by adding random effects to a trial object.
 `nothing`
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
+```jldoctest; setup = :(using GenomicBreedingIO)
 julia> trial = inittrial();
 
 julia> simulatelineartrait!(trial);
@@ -1072,7 +1072,7 @@ Otherwise, it concatenates the new trait horizontally to the existing Y matrix.
 Uses CUDA for GPU acceleration. Input data is automatically converted to CuArray.
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
+```jldoctest; setup = :(using GenomicBreedingIO)
 julia> trial = inittrial();
 
 julia> simulatelineartrait!(trial);
@@ -1198,8 +1198,8 @@ The `trait_specs` dictionary should contain trait configurations:
   - `"dropout_rates"`: Vector of dropout rates for each layer
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE)
-julia> trial = simulatetrial(n_entries=100, n_populations=3, n_replications=5, years=["2025-2026"], seasons=["LateSpring"], harvests=["1"], sites=["Control", "Drought"], verbose=false);
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> trial = simulatetrial(n_entries=100, n_populations=3, n_replications=5, years=["2025-2026"], seasons=["LateSpring"], harvests=["1"], sites=["Control", "Drought"]);
 
 julia> size(trial.A)
 (1000, 10)

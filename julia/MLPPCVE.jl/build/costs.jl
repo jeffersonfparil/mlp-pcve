@@ -10,18 +10,18 @@ Returns a CuArray containing element-wise MSE values: (ŷ - y)²/2
 - `y::CuArray{T,2}`: Target values
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> sum(Matrix(MSE(ŷ, y))[1, :]) == sum((ŷ .- y).^2 / 2)
+julia> sum(Matrix(MSE(ŷ, y))[1, :]) == sum((ŷ .- y).^2 / 2)
 true
 ```
 """
-function MSE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
-    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
-    map(x -> (x^2) / 2, ŷ - y) # division by 2 is cosmetic-ish --> just so that the derivative is simple the difference - see below
+function MSE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
+    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
+    map(x -> (x^2) / 2, ŷ - y) # division by 2 is cosmetic-ish --> just so that the derivative is simple the difference - see below
 end
 
 """
@@ -36,21 +36,21 @@ Returns a CuArray containing element-wise derivatives: ŷ - y
 - `y::CuArray{T,2}`: Target values
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> sum(Matrix(MSE_derivative(ŷ, y))[1, :]) == sum(ŷ .- y)
+julia> sum(Matrix(MSE_derivative(ŷ, y))[1, :]) == sum(ŷ .- y)
 true
 ```
 """
 function MSE_derivative(
-    ŷ::CuArray{T,2},
+    ŷ::CuArray{T,2},
     y::CuArray{T,2},
 )::CuArray{T,2} where {T<:AbstractFloat}
-    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
-    map(x -> x, ŷ - y)
+    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
+    map(x -> x, ŷ - y)
 end
 
 """
@@ -65,18 +65,18 @@ Returns a CuArray containing element-wise MAE values: |ŷ - y|/2
 - `y::CuArray{T,2}`: Target values
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> sum(Matrix(MAE(ŷ, y))[1, :]) == sum(abs.(ŷ .- y) ./ 2)
+julia> sum(Matrix(MAE(ŷ, y))[1, :]) == sum(abs.(ŷ .- y) ./ 2)
 true
 ```
 """
-function MAE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
-    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
-    map(x -> abs(x) / 2, ŷ - y)
+function MAE(ŷ::CuArray{T,2}, y::CuArray{T,2})::CuArray{T,2} where {T<:AbstractFloat}
+    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
+    map(x -> abs(x) / 2, ŷ - y)
 end
 
 """
@@ -91,21 +91,21 @@ Returns a CuArray containing element-wise derivatives: sign(ŷ - y)
 - `y::CuArray{T,2}`: Target values
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> sum(Matrix(MAE_derivative(ŷ, y))[1, :]) == sum(x < 0.0 ? 1.0 : -1.0 for x in Matrix(ŷ - y)[1, :])
+julia> sum(Matrix(MAE_derivative(ŷ, y))[1, :]) == sum(x < 0.0 ? 1.0 : -1.0 for x in Matrix(ŷ - y)[1, :])
 true
 ```
 """
 function MAE_derivative(
-    ŷ::CuArray{T,2},
+    ŷ::CuArray{T,2},
     y::CuArray{T,2},
 )::CuArray{T,2} where {T<:AbstractFloat}
-    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
-    map(x -> x < 0.0 ? 1.0 : -1.0, ŷ - y)
+    # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
+    map(x -> x < 0.0 ? 1.0 : -1.0, ŷ - y)
 end
 
 """
@@ -125,21 +125,21 @@ where x = ŷ - y
 - `δ::T=1.0`: Threshold parameter that determines the transition point between MSE and MAE
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> round(sum(Matrix(HL(ŷ, y))[1, :])) == round(sum(abs(x) <= 1.00 ? 0.5 * (x^2) : 1.00 * (abs(x) - (0.5 * 1.00)) for x in Matrix(ŷ - y)[1, :]))
+julia> round(sum(Matrix(HL(ŷ, y))[1, :])) == round(sum(abs(x) <= 1.00 ? 0.5 * (x^2) : 1.00 * (abs(x) - (0.5 * 1.00)) for x in Matrix(ŷ - y)[1, :]))
 true
 ```
 """
 function HL(
-    ŷ::CuArray{T,2},
+    ŷ::CuArray{T,2},
     y::CuArray{T,2};
     δ::T = 1.0,
 )::CuArray{T,2} where {T<:AbstractFloat}
-    map(x -> abs(x) <= δ ? 0.5 * (x^2) : δ * (abs(x) - (0.5 * δ)), ŷ - y)
+    map(x -> abs(x) <= δ ? 0.5 * (x^2) : δ * (abs(x) - (0.5 * δ)), ŷ - y)
 end
 
 """
@@ -158,19 +158,19 @@ where x = ŷ - y
 - `δ::T=1.0`: Threshold parameter that determines the transition point between MSE and MAE
 
 # Examples
-```jldoctest; setup = :(using MLPPCVE, CUDA)
-julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
+```jldoctest; setup = :(using GenomicBreedingIO)
+julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> round(sum(Matrix(HL_derivative(ŷ, y))[1, :])) == round(sum(abs(x) <= 1.00 ? -x : -1.00 * sign(x) for x in Matrix(ŷ - y)[1, :]))
+julia> round(sum(Matrix(HL_derivative(ŷ, y))[1, :])) == round(sum(abs(x) <= 1.00 ? -x : -1.00 * sign(x) for x in Matrix(ŷ - y)[1, :]))
 true
 ```
 """
 function HL_derivative(
-    ŷ::CuArray{T,2},
+    ŷ::CuArray{T,2},
     y::CuArray{T,2};
     δ::T = 1.0,
 )::CuArray{T,2} where {T<:AbstractFloat}
-    map(x -> abs(x) <= δ ? -x : -δ * sign(x), ŷ - y)
+    map(x -> abs(x) <= δ ? -x : -δ * sign(x), ŷ - y)
 end
