@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     // to our consumers. We must give it a name because a Zig package can expose
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
-    const mod = b.addModule("mlp_pcve", .{
+    const mod = b.addModule("mlphi", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
         // in this file, which means that if you have declarations that you
@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) void {
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
     // to the module defined above, it's sometimes preferable to split business
-    // business logic and the CLI into two separate modules.
+    // logic and the CLI into two separate modules.
     //
     // If your goal is to create a Zig library for others to use, consider if
     // it might benefit from also exposing a CLI tool. A parser library for a
@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) void {
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
-        .name = "mlp_pcve",
+        .name = "mlphi",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
@@ -73,12 +73,12 @@ pub fn build(b: *std.Build) void {
             // List of modules available for import in source files part of the
             // root module.
             .imports = &.{
-                // Here "mlp_pcve" is the name you will use in your source code to
-                // import this module (e.g. `@import("mlp_pcve")`). The name is
+                // Here "mlphi" is the name you will use in your source code to
+                // import this module (e.g. `@import("mlphi")`). The name is
                 // repeated because you are allowed to rename your imports, which
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
-                .{ .name = "mlp_pcve", .module = mod },
+                .{ .name = "mlphi", .module = mod },
             },
         }),
     });
@@ -88,18 +88,6 @@ pub fn build(b: *std.Build) void {
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
-
-    // Point to cudaz dependency
-    const cudaz_dep = b.dependency("cudaz", .{});
-
-    // Fetch and add the module from cudaz dependency
-    const cudaz_module = cudaz_dep.module("cudaz");
-    exe.root_module.addImport("cudaz", cudaz_module);
-
-    // Dynamically link to libc, cuda, nvrtc
-    exe.linkLibC();
-    exe.linkSystemLibrary("cuda");
-    exe.linkSystemLibrary("nvrtc");
 
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
