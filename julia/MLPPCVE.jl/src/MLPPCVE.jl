@@ -8,7 +8,8 @@ using Random, LinearAlgebra, CUDA, JLD2, ArgParse
 # - always compile CUDA with the graphics card you want to use the binary on
 # - compile: `julia +1.11 -E 'using Pkg; Pkg.resolve(); using PackageCompiler; create_app("MLPPCVE.jl/", "mlppcve-bin")'`
 # - do the following prior to running the binary: `export JULIA_CUDA_USE_COMPAT=false`
-# - test run - no arguments show help docs: `./mlppcve-bin/bin/MLPPCVE`
+# - test run - no arguments show help docs: `./mlppcve-bin/bin/MLPPCVE -h`
+# - to run a test example using simulated data: `./mlppcve-bin/bin/MLPPCVE -f example`
 
 # (0) Helper functions
 include("helpers.jl")
@@ -143,7 +144,7 @@ function args_parser()
         help = "Prefix of the output files which can include directory names."
         arg_type = String
         default = "mlppcve"
-        "--silent"
+        "--verbose"
         help = "Show progress messages"
         action = :store_true
     end
@@ -246,7 +247,7 @@ function args_parser()
     args_output["n-threads"] = args["n-threads"]
     args_output["seed"] = args["seed"]
     args_output["output-prefix"] = args["output-prefix"]
-    args_output["verbose"] = !args["silent"]
+    args_output["verbose"] = !args["verbose"]
     # Output
     return args_output
 end

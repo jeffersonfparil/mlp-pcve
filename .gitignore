@@ -1,3 +1,5 @@
-.zig-cache/
-zig-out/
-*.o
+zig/mlphi/.zig-cache/
+zig/mlphi/zig-out/
+zig/mlphi/*.o
+rust/mlphi/target/
+rust/mlphi/Cargo.lock
