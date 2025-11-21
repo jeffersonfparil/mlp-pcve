@@ -1,25 +1,63 @@
+use cudarc::driver::{CudaContext, DeviceRepr, CudaSlice, CudaStream, DriverError};
+use std::default::Default;
+use std::clone::Clone;
 use std::sync::Arc;
-use cudarc::driver::{DriverError, CudaContext, CudaSlice, CudaStream};
+use std::fmt;
 
-
-pub struct MatrixF32 {
+/// Matrix is stored in GPU memory
+#[derive(Debug)]
+pub struct Matrix<T: Default + Clone> {
     pub n_rows: usize,
     pub n_cols: usize,
-    pub data: CudaSlice<f32>,
+    pub data: CudaSlice<T>,
 }
 
-impl MatrixF32 {
+/// Matrix errors
+#[derive(Debug)]
+pub enum MatrixError {
+    DimensionMismatch(String),
+    TypeMismatch(String),
+    OutOfBounds(String),
+    OutOfMemory(String),
+}
+
+/// Implement std::error::Error for MatrixError
+impl std::error::Error for MatrixError {}
+
+/// Implement std::fmt::Display for MatrixError
+impl fmt::Display for MatrixError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MatrixError::DimensionMismatch(msg) => write!(f, "Dimension Mismatch: {}", msg),
+            MatrixError::TypeMismatch(msg) => write!(f, "Type Mismatch: {}", msg),
+            MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds: {}", msg),
+            MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
+        }
+    }
+}
+
+/// Implement methods for Matrix
+impl<T: DeviceRepr + Default + Clone> Matrix<T> {
+    /// Create a new Matrix
     pub fn new(
-        stream: Arc<CudaStream>, 
-        data: &Vec<f32>, 
-        n_rows: usize, 
-        n_cols: usize
-    ) -> Result<Self, DriverError> {
-        let d = stream.clone_htod(data)?;
+        data: CudaSlice<T>,
+        n_rows: usize,
+        n_cols: usize,
+    ) -> Result<Self, MatrixError> {
+        let n = data.len();
+        if n != n_rows * n_cols {
+            return Err(MatrixError::DimensionMismatch(format!(
+                "Data length {} does not match matrix dimensions {}x{}={}",
+                n,
+                n_rows,
+                n_cols,
+                n_rows * n_cols
+            )));
+        }
         let out = Self {
             n_rows: n_rows,
             n_cols: n_cols,
-            data: d,
+            data: data,
         };
         Ok(out)
     }
@@ -28,17 +66,30 @@ impl MatrixF32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use rand::prelude::*;
+
     #[test]
     fn test_matrix_new() -> Result<(), Box<dyn std::error::Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let a_host: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let a_matrix = MatrixF32::new(stream, &a_host, 2, 3);
-
-        // stream.memcpy_dtoh(&a_matrix, &mut a_host)?;
+        let mut a_host: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         println!("a_host {:?}", a_host);
-        
+
+        rand::fill(&mut a_host[..]);
+        println!("a_host {:?}", a_host);
+
+        let a_dev: CudaSlice<f32> = stream.clone_htod(&a_host)?;
+        println!("a_dev {:?}", a_dev);
+        println!("a_dev.len() {:?}", a_dev.len());
+        let a_matrix = Matrix::new(a_dev, 2, 3)?;
+
+        // println!("a_dev {:?}", a_dev); // error because a_dev is now owned by a_matrix
+
+
+        let mut b_host: Vec<f32> = a_host.clone();
+        stream.memcpy_dtoh(&a_matrix.data, &mut b_host)?;
+        println!("b_host {:?}", b_host);
+
         Ok(())
     }
 }
