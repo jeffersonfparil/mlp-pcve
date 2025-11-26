@@ -1,4 +1,6 @@
-use cudarc::driver::{CudaContext, DeviceRepr, CudaSlice, CudaStream, DriverError};
+use cudarc::driver::{CudaContext, DeviceRepr, CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
+use cudarc::nvrtc::CompileError;
+use cudarc::nvrtc::compile_ptx;
 use std::default::Default;
 use std::clone::Clone;
 use std::sync::Arc;
@@ -20,10 +22,10 @@ pub fn matmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
     };
     let stream: Arc<CudaStream> = ctx.default_stream();
 
-    let n_rows = a.n_rows;
-    let n_cols = b.n_cols;
-    let n_out = n_rows * n_cols;
-    let mut out: Vec<T> = vec![T::default(); n_out];
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = b.n_cols as u32;
+    let n_out: u32 = n_rows * n_cols;
+    let mut out: Vec<T> = vec![T::default(); n_out as usize];
     let mut out_dev: CudaSlice<T> = match stream.clone_htod(&out) {
         Err(e) => return Err(MatrixError::OutOfMemory(format!("Failed to setup the output matrix from host to device: {}", e))),
         Ok(x) => x,
@@ -31,11 +33,52 @@ pub fn matmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
 
     // // Multiplication kernel definition and launcher...
 
+    let ptx = match 
+        compile_ptx(
+            "
+            extern \"C\" __global__ void cuMatMul(float* A, float* B, float*C, int n_rows, int n_cols) {
+                // Matrix multiplication kernel implementation
+                // This is a placeholder; actual implementation needed
+            }
+            "
+        ) {
+        Err(e) => return Err(MatrixError::CompileError(format!("Failed to compile PTX: {}", e))),
+        Ok(p) => p,
+    };
+    let module = match ctx.load_module(ptx) {
+        Err(e) => return Err(MatrixError::OutOfMemory(format!("Failed to load CUDA module: {}", e))),
+        Ok(m) => m,
+    };
+    let f = match module.load_function("cuMatMul") {
+        Err(e) => return Err(MatrixError::OutOfMemory(format!("Failed to load CUDA function: {}", e))),
+        Ok(f) => f,
+    };
+    let mut builder = stream.launch_builder(&f);
+    builder.arg(&a.data);
+    builder.arg(&b.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_out);
+    let block_dim: (u32, u32, u32) = (16, 16, 1); // Each block computes a 16x16 sub-matrix
+    let grid_dim: (u32, u32, u32) = (
+        (block_dim.0 + 1) / n_cols, // Number of blocks in the x-dimension
+        (block_dim.1 + 1) / n_rows, // Number of blocks in the y-dimension
+        1,
+    );
+    let cfg = LaunchConfig {
+        block_dim: block_dim,
+        grid_dim: grid_dim,
+        shared_mem_bytes: 0,
+    };
+    unsafe { builder.launch(cfg) };
+
+
+
+
     // match stream.memcpy_dtoh(&out_dev, &mut out) {
     //     Err(e) => return Err(MatrixError::OutOfMemory(format!("Failed to copy data from device to host: {}", e))),
     //     Ok(_) => return Matrix::new(out_dev, n_rows, n_cols),
     // }
-    Matrix::new(out_dev, n_rows, n_cols)
+    Matrix::new(out_dev, n_rows as usize, n_cols as usize)
 }
 
 // use cudarc::driver::{

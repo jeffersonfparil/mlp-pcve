@@ -19,6 +19,7 @@ pub enum MatrixError {
     TypeMismatch(String),
     OutOfBounds(String),
     OutOfMemory(String),
+    CompileError(String),
 }
 
 /// Implement std::error::Error for MatrixError
@@ -32,6 +33,8 @@ impl fmt::Display for MatrixError {
             MatrixError::TypeMismatch(msg) => write!(f, "Type Mismatch: {}", msg),
             MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds: {}", msg),
             MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
+            MatrixError::CompileError(msg) => write!(f, "Compiler Error: {}", msg),
+            _ => write!(f, "Unknown Matrix Error"),
         }
     }
 }
