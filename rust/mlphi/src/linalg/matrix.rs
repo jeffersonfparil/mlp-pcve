@@ -1,12 +1,12 @@
-use cudarc::driver::{CudaContext, DeviceRepr, CudaSlice, CudaStream, DriverError};
-use std::default::Default;
+use cudarc::driver::{CudaContext, CudaSlice, DeviceRepr};
 use std::clone::Clone;
-use std::sync::Arc;
+use std::default::Default;
 use std::fmt;
 
 /// Matrix is stored in GPU memory
+/// I have decided to store data in a row-major format just because I feel like it :-P
 #[derive(Debug)]
-pub struct Matrix<T: Default + Clone> {
+pub struct Matrix<T: Default + Clone + cudarc::driver::DeviceRepr> {
     pub n_rows: usize,
     pub n_cols: usize,
     pub data: CudaSlice<T>,
@@ -34,7 +34,6 @@ impl fmt::Display for MatrixError {
             MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds: {}", msg),
             MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
             MatrixError::CompileError(msg) => write!(f, "Compiler Error: {}", msg),
-            _ => write!(f, "Unknown Matrix Error"),
         }
     }
 }
@@ -42,11 +41,7 @@ impl fmt::Display for MatrixError {
 /// Implement methods for Matrix
 impl<T: DeviceRepr + Default + Clone> Matrix<T> {
     /// Create a new Matrix
-    pub fn new(
-        data: CudaSlice<T>,
-        n_rows: usize,
-        n_cols: usize,
-    ) -> Result<Self, MatrixError> {
+    pub fn new(data: CudaSlice<T>, n_rows: usize, n_cols: usize) -> Result<Self, MatrixError> {
         let n = data.len();
         if n != n_rows * n_cols {
             return Err(MatrixError::DimensionMismatch(format!(
@@ -69,7 +64,6 @@ impl<T: DeviceRepr + Default + Clone> Matrix<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::prelude::*;
 
     #[test]
     fn test_matrix_new() -> Result<(), Box<dyn std::error::Error>> {
@@ -88,10 +82,15 @@ mod tests {
 
         // println!("a_dev {:?}", a_dev); // error because a_dev is now owned by a_matrix
 
-
         let mut b_host: Vec<f32> = a_host.clone();
         stream.memcpy_dtoh(&a_matrix.data, &mut b_host)?;
         println!("b_host {:?}", b_host);
+
+        MatrixError::DimensionMismatch("Test error".to_string());
+        MatrixError::TypeMismatch("Test error".to_string());
+        MatrixError::OutOfBounds("Test error".to_string());
+        MatrixError::OutOfMemory("Test error".to_string());
+        MatrixError::CompileError("Test error".to_string());
 
         Ok(())
     }
