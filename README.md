@@ -29,3 +29,7 @@ Rust is the primary development language. The implementation focuses on:
 | Julia | Prototype Complete | Initial mathematical and algorithmic validation. | Excellent GPU support for high-speed numerical computing and quick iteration. |
 | Rust | Active Development | High-performance, production-grade core implementation. | Safety, speed, and concurrency for resource-intensive operations. |
 | Zig | Planned | Potential future port or alternative high-performance core. | Low-level control, simple C interoperability, and fine-grained memory management. |
+
+## Quickstart guide
+
+- TODO
