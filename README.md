@@ -1,9 +1,9 @@
 # mlp-pcve
-Multi-layer perceptrons for phenotype and covariance estimations
+Multi-layer perceptrons for phenotype and covariance estimation
 
 ## Project Overview
 
-mlp-pcve implements a Multi-Layer Perceptron (MLP) from scratch. It serves as a data-driven alternative to traditional Mixed Linear Models (MLMs). The core goal is to replace the need to manually specify complex covariance structures with a neural network that learns the covariance structures implicitly from the data.
+mlp-pcve implements Multi-Layer Perceptrons (MLP) from scratch. It serves as a data-driven alternative to traditional Mixed Linear Models (MLMs). The core goal is to replace the need to manually specify complex covariance structures with a neural network that learns the covariance structures implicitly from the data.
 
 ## Goals
 
