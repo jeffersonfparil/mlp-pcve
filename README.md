@@ -1,22 +1,20 @@
 # mlp-pcve
-Multi-layer perceptrons for Field Trial Analysis
+Multi-layer perceptrons for phenotype and covariance estimations
 
 ## Project Overview
 
-mlp-pcve is a foundational effort to build a custom, highly performant machine learning framework tailored specifically for agricultural and crop field trial statistics.
+mlp-pcve implements a Multi-Layer Perceptron (MLP) from scratch. It serves as a data-driven alternative to traditional Mixed Linear Models (MLMs). The core goal is to replace the need to manually specify complex covariance structures with a neural network that learns the covariance structures implicitly from the data.
 
-The project implements a Multi-Layer Perceptron (MLP) from scratch. It serves as a data-driven alternative to traditional Mixed Linear Models (MLMs). The core goal is to replace the need to manually specify complex statistical covariance structures with a neural network that learns the non-genetic covariance structure directly from the field data.
-
-## Primary Estimation Goals
+## Goals
 
 The ultimate objective is to obtain more accurate and robust estimates for the key components of a field trial:
 
 | Component | Description | Traditional MLM Role | MLP Approach |
 |---|---|---|---|
-| Entry Effects | The genetic or varietal performance. | Fixed or Random Effect (BLUEs/BLUPs) | Learned non-linear function of entry ID/Factors. |
-| Treatment Effects | The impact of experimental applications (e.g., fertilizer, spacing). | Fixed Effect | Learned non-linear function of treatment inputs. |
-| Spatial Effects | The local, non-genetic variation within the field. | Residual Covariance (R-Matrix, e.g., AR(1), SP(exp)) | Learned from plot coordinates (x, y) as input features. |
-| Seasonal Effects | Variation due to time, environment, or growing season. | Fixed or Random Effect | Learned non-linear function of seasonal/environmental covariates. |
+| Entry effects | The genetic or varietal performance. | Fixed or Random Effect (BLUEs/BLUPs) | Learned non-linear function of entry ID/Factors. |
+| Treatment effects | The impact of experimental applications (e.g., fertiliser, spacing). | Fixed Effect | Learned non-linear function of treatment inputs. |
+| Spatial effects | The local, non-genetic variation within the field. | Residual Covariance (R-Matrix, e.g., AR(1), SP(exp)) | Learned from plot coordinates (x, y) as input features. |
+| Year and seasonal effects | Variation due to time, environment, or growing season. | Fixed or Random Effect | Learned non-linear function of seasonal/environmental covariates. |
 
 ## Current Focus: Rust
 
