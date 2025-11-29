@@ -21,11 +21,11 @@ The ultimate objective is to obtain more accurate and robust estimates for the k
 Rust is the primary development language. The implementation focuses on:
  * Memory Safety: Leveraging Rust's ownership model for safe and correct matrix operations.
  * Performance: Achieving high performance for matrix multiplication and gradient calculation, essential for deep learning operations.
- * Low-Level Control: The entire backpropagation algorithm and optimizer logic (e.g., Stochastic Gradient Descent) are being built manually.
+ * Low-Level Control: The activation and cost functions, forward pass, backpropagation algorithms and optimisers are being built manually.
 
 ## Prototype and Future Plans
 | Language | Status | Role | Rationale |
 |---|---|---|---|
-| Julia | Prototype Complete | Initial mathematical and algorithmic validation. | Excellent native support for high-speed numerical computing and quick iteration. |
+| Julia | Prototype Complete | Initial mathematical and algorithmic validation. | Excellent GPU support for high-speed numerical computing and quick iteration. |
 | Rust | Active Development | High-performance, production-grade core implementation. | Safety, speed, and concurrency for resource-intensive operations. |
 | Zig | Planned | Potential future port or alternative high-performance core. | Low-level control, simple C interoperability, and fine-grained memory management. |
