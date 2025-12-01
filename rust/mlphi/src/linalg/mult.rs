@@ -1,6 +1,8 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
+use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
+use cudarc::nvrtc::safe::Ptx;
+use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
 use std::clone::Clone;
 use std::default::Default;
 use std::sync::Arc;
@@ -24,6 +26,28 @@ const SCALARMATMUL: &str = "
         if ((i < n_rows) && (j < n_cols)) {
             int idx = (i * n_cols) + j; // Linear index for the A and B matrices
             B[idx] = scalar * A[idx];
+        }
+    }
+";
+
+const ELEMENTWISEMATMUL: &str = "
+    extern \"C\" __global__ void cuScalarMatMul(float* A, float* B, float* C, int n_rows, int n_cols) {
+        // Scalar-matrix multiplication kernel implementation
+        // Arguments:
+        //  - scalar: scalar multiplier
+        //  - A: input matrix 1 (n_rows x n_cols)
+        //  - B: input matrix 2 (n_rows x n_cols)
+        //  - C: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in all 3 matrices
+        //  - n_cols: number of columns in all 3 matrices
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A, B and C are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            C[idx] = A[idx] * B[idx];
         }
     }
 ";
@@ -54,28 +78,26 @@ const MATMUL: &str = "
     }
 ";
 
-/// Scalar-matrix multiplication.
-///
-/// # Parameters
-/// - `a`: scalar value to multiply with the matrix.
-/// - `b`: reference to the input matrix.
-///
-/// # Example
-/// ```rust
-/// // TODO
-/// ```
-///
-/// # Notes
-/// - `BLOCK_SIZE` is constant set to `16`, defining the dimensions of each thread block in the CUDA kernel.
-/// - The dimensions of each thread block in the kernel. Here, it is set to a 2D block
-///   with dimensions `(BLOCK_SIZE, BLOCK_SIZE, 1)`.
-/// - No shared memory is used.
-/// - The kernel assumes that the matrix is stored in row-major order.
-pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    s: T,
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, MatrixError> {
-    let ctx = match CudaContext::new(0) {
+pub struct MatMulPrepResult<T: std::clone::Clone + std::default::Default + cudarc::driver::DeviceRepr> {
+    pub ctx: Arc<CudaContext>,
+    pub stream: Arc<CudaStream>,
+    pub ptx: Ptx,
+    pub module: Arc<CudaModule>,
+    pub function: CudaFunction,
+    pub launch_args: LaunchArgs<'static>,
+    pub launch_config: LaunchConfig,
+    pub out_host: Vec<T>,
+    pub out_dev: CudaSlice<T>,
+}
+
+pub fn prep_cuda_kernel<T: std::clone::Clone + std::default::Default + cudarc::driver::DeviceRepr>(
+    n_rows: u32,
+    n_cols: u32,
+    kernel_string: &str,
+    function_name: &str,
+) -> Result<MatMulPrepResult<T>, MatrixError>
+{
+    let ctx: Arc<CudaContext> = match CudaContext::new(0) {
         Err(e) => {
             return Err(MatrixError::OutOfMemory(format!(
                 "Failed to create CUDA context: {}",
@@ -85,20 +107,7 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
         Ok(c) => c,
     };
     let stream: Arc<CudaStream> = ctx.default_stream();
-
-    let n_rows: u32 = a.n_rows as u32;
-    let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = match stream.clone_htod(&out) {
-        Err(e) => {
-            return Err(MatrixError::OutOfMemory(format!(
-                "Failed to setup the output matrix from host to device: {}",
-                e
-            )));
-        }
-        Ok(x) => x,
-    };
-    let ptx = match compile_ptx(SCALARMATMUL) {
+    let ptx: Ptx = match compile_ptx(kernel_string) {
         Err(e) => {
             return Err(MatrixError::CompileError(format!(
                 "Failed to compile PTX: {}",
@@ -107,7 +116,7 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
         }
         Ok(p) => p,
     };
-    let module = match ctx.load_module(ptx) {
+    let module: Arc<CudaModule> = match ctx.load_module(ptx.clone()) {
         Err(e) => {
             return Err(MatrixError::OutOfMemory(format!(
                 "Failed to load CUDA module: {}",
@@ -116,7 +125,7 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
         }
         Ok(m) => m,
     };
-    let f = match module.load_function("cuScalarMatMul") {
+    let f: CudaFunction = match module.load_function(function_name) {
         Err(e) => {
             return Err(MatrixError::OutOfMemory(format!(
                 "Failed to load CUDA function: {}",
@@ -125,12 +134,7 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
         }
         Ok(f) => f,
     };
-    let mut builder = stream.launch_builder(&f);
-    builder.arg(&s);
-    builder.arg(&a.data);
-    builder.arg(&mut out_dev);
-    builder.arg(&n_rows);
-    builder.arg(&n_cols);
+    let mut builder = stream.launch_builder(&f.clone());
     let cfg = LaunchConfig {
         block_dim: (
             BLOCK_SIZE, 
@@ -144,8 +148,119 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
         ),
         shared_mem_bytes: 0,
     };
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = match stream.clone_htod(&out) {
+        Err(e) => {
+            return Err(MatrixError::OutOfMemory(format!(
+                "Failed to setup the output matrix from host to device: {}",
+                e
+            )));
+        }
+        Ok(x) => x,
+    };
+    Ok(MatMulPrepResult {
+        ctx,
+        stream,
+        ptx,
+        module,
+        function: f,
+        launch_args: builder,
+        launch_config: cfg,
+        out_host: out,
+        out_dev,
+    })
+}
+
+pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    s: T,
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, MatrixError> {
+    // let ctx = match CudaContext::new(0) {
+    //     Err(e) => {
+    //         return Err(MatrixError::OutOfMemory(format!(
+    //             "Failed to create CUDA context: {}",
+    //             e
+    //         )));
+    //     }
+    //     Ok(c) => c,
+    // };
+    // let stream: Arc<CudaStream> = ctx.default_stream();
+
+    // let n_rows: u32 = a.n_rows as u32;
+    // let n_cols: u32 = a.n_cols as u32;
+    // let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    // let mut out_dev: CudaSlice<T> = match stream.clone_htod(&out) {
+    //     Err(e) => {
+    //         return Err(MatrixError::OutOfMemory(format!(
+    //             "Failed to setup the output matrix from host to device: {}",
+    //             e
+    //         )));
+    //     }
+    //     Ok(x) => x,
+    // };
+    // let ptx = match compile_ptx(SCALARMATMUL) {
+    //     Err(e) => {
+    //         return Err(MatrixError::CompileError(format!(
+    //             "Failed to compile PTX: {}",
+    //             e
+    //         )));
+    //     }
+    //     Ok(p) => p,
+    // };
+    // let module = match ctx.load_module(ptx) {
+    //     Err(e) => {
+    //         return Err(MatrixError::OutOfMemory(format!(
+    //             "Failed to load CUDA module: {}",
+    //             e
+    //         )));
+    //     }
+    //     Ok(m) => m,
+    // };
+    // let f = match module.load_function("cuScalarMatMul") {
+    //     Err(e) => {
+    //         return Err(MatrixError::OutOfMemory(format!(
+    //             "Failed to load CUDA function: {}",
+    //             e
+    //         )));
+    //     }
+    //     Ok(f) => f,
+    // };
+    // let mut builder = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+
+    let Q = prep_cuda_kernel(
+        n_rows,
+        n_cols,
+        SCALARMATMUL,
+        "cuScalarMatMul",
+    )?;
+
+
+    
+
+    
+
+    Q.builder.arg(&s);
+    Q.builder.arg(&a.data);
+    Q.builder.arg(&mut out_dev);
+    Q.builder.arg(&n_rows);
+    Q.builder.arg(&n_cols);
+    // let cfg = LaunchConfig {
+    //     block_dim: (
+    //         BLOCK_SIZE, 
+    //         BLOCK_SIZE, 
+    //         1
+    //     ),
+    //     grid_dim: (
+    //         (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+    //         (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+    //         1
+    //     ),
+    //     shared_mem_bytes: 0,
+    // };
     unsafe {
-        let _ = builder.launch(cfg);
+        let _ = Q.builder.launch(Q.cfg);
     };
     Matrix::new(out_dev, n_rows as usize, n_cols as usize)
 }
