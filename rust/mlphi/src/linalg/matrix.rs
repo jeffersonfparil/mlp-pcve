@@ -38,6 +38,14 @@ impl fmt::Display for MatrixError {
     }
 }
 
+// Implement From trait from Box<dyn std::error::Error> to MatrixError
+// This is to simplify error handling when using the cudarc error types and our MatrixError
+impl From<Box<dyn std::error::Error>> for MatrixError {
+    fn from(err: Box<dyn std::error::Error>) -> MatrixError {
+        MatrixError::CompileError(err.to_string())
+    }
+}
+
 /// Implement methods for Matrix
 impl<T: DeviceRepr + Default + Clone> Matrix<T> {
     /// Create a new Matrix
