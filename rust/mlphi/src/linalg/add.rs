@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 const BLOCK_SIZE: u32 = 16;
 
-const SCALARMATMUL: &str = "
-    extern \"C\" __global__ void cuScalarMatMul(float scalar, float* A, float* B, int n_rows, int n_cols) {
-        // Scalar-matrix multiplication kernel implementation
+const SCALARMATADD: &str = "
+    extern \"C\" __global__ void cuScalarMatAdd(float scalar, float* A, float* B, int n_rows, int n_cols) {
+        // Scalar-matrix addition kernel implementation
         // Arguments:
         //  - scalar: scalar multiplier
         //  - A: input matrix (n_rows x n_cols)
@@ -25,14 +25,14 @@ const SCALARMATMUL: &str = "
         int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
         if ((i < n_rows) && (j < n_cols)) {
             int idx = (i * n_cols) + j; // Linear index for the A and B matrices
-            B[idx] = scalar * A[idx];
+            B[idx] = scalar + A[idx];
         }
     }
 ";
 
-const ELEMENTWISEMATMUL: &str = "
-    extern \"C\" __global__ void cuElementwiseMatMul(float* A, float* B, float* C, int n_rows, int n_cols) {
-        // Elementwise matrix multiplication kernel implementation
+const ELEMENTWISEMATADD: &str = "
+    extern \"C\" __global__ void cuElementwiseMatAdd(float* A, float* B, float* C, int n_rows, int n_cols) {
+        // Matrix addition kernel implementation
         // Arguments:
         //  - scalar: scalar multiplier
         //  - A: input matrix 1 (n_rows x n_cols)
@@ -47,46 +47,20 @@ const ELEMENTWISEMATMUL: &str = "
         int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
         if ((i < n_rows) && (j < n_cols)) {
             int idx = (i * n_cols) + j; // Linear index for the A and B matrices
-            C[idx] = A[idx] * B[idx];
+            C[idx] = A[idx] + B[idx];
         }
     }
 ";
 
-const MATMUL: &str = "
-    extern \"C\" __global__ void cuMatMul(float* A, float* B, float*C, int n_rows, int n_cols, int p) {
-        // Matrix multiplication kernel implementation
-        // Arguments:
-        //  - A: left matrix (n_rows x p)
-        //  - B: right matrix (p x n_cols)
-        //  - C: output matrix (n_rows x n_cols)
-        //  - n_rows: number of rows in A and C
-        //  - n_cols: number of columns in B and C
-        //  - p: number of columns in A and rows in B
-        // Assumes:
-        //  - row-major storage
-        //  - matrices A and B are of compatible
-        //  - matrix C is the correct size to hold the result
-        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index of C to compute
-        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index of C to compute
-        if ((i < n_rows) && (j < n_cols)) {
-            float s = 0.0f;
-            for (int k=0; k<p; k++) {
-                s += A[(i*p)+k] * B[(k*n_cols)+j];
-            }
-            C[(i*n_cols)+j] = s;
-        }
-    }
-";
-
-pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
+pub fn scalarmatadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
     s: T,
     a: &Matrix<T>,
 ) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
-    let ptx: Ptx = compile_ptx(SCALARMATMUL)?;
+    let ptx: Ptx = compile_ptx(SCALARMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
     let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuScalarMatMul")?;
+    let f: CudaFunction = module.load_function("cuScalarMatAdd")?;
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -118,7 +92,7 @@ pub fn scalarmatmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn elemetwisematmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
+pub fn elemetwisematadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
     a: &Matrix<T>,
     b: &Matrix<T>,
 ) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
@@ -128,11 +102,11 @@ pub fn elemetwisematmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
             a.n_rows, b.n_rows, a.n_cols, b.n_cols
         ))));
     }
-    let ptx: Ptx = compile_ptx(ELEMENTWISEMATMUL)?;
+    let ptx: Ptx = compile_ptx(ELEMENTWISEMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
     let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuElementwiseMatMul")?;
+    let f: CudaFunction = module.load_function("cuElementwiseMatAdd")?;
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -143,55 +117,6 @@ pub fn elemetwisematmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
     builder.arg(&n_cols);
-    let cfg = LaunchConfig {
-        block_dim: (
-            BLOCK_SIZE, 
-            BLOCK_SIZE, 
-            1
-        ),
-        grid_dim: (
-            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            1
-        ),
-        shared_mem_bytes: 0,
-    };
-    unsafe {
-        let _ = builder.launch(cfg);
-    };
-    Ok(
-        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
-    )
-}
-
-
-pub fn matmul<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-    b: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
-    if a.n_cols != b.n_rows {
-        return Err(Box::new(MatrixError::DimensionMismatch(format!(
-            "Dimension mismatch: a.n_cols ({}) != b.n_rows ({})",
-            a.n_cols, b.n_rows
-        ))));
-    }
-    let ptx: Ptx = compile_ptx(MATMUL)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuMatMul")?;
-    let mut builder: LaunchArgs = stream.launch_builder(&f);
-    let n_rows: u32 = a.n_rows as u32;
-    let n_cols: u32 = b.n_cols as u32;
-    let p: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
-    builder.arg(&a.data);
-    builder.arg(&b.data);
-    builder.arg(&mut out_dev);
-    builder.arg(&n_rows);
-    builder.arg(&n_cols);
-    builder.arg(&p);
     let cfg = LaunchConfig {
         block_dim: (
             BLOCK_SIZE, 
@@ -249,21 +174,15 @@ mod tests {
         println!("Before: b_host {:?}", b_host);
         println!("Before: c_host {:?}", c_host);
 
-        let matrix_1 = scalarmatmul(2.0, &a_matrix)?;
+        let matrix_1 = scalarmatadd(2.0, &a_matrix)?;
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
-        println!("After `scalarmatmul`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![2.*0.0, 2.*1.0, 2.*2.0, 2.*3.0, 2.*4.0, 2.*5.0, 2.*6.0, 2.*7.0, 2.*8.0, 2.*9.0, 2.*10.0, 2.*11.0]);
+        println!("After `scalarmatadd`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![2.+0.0, 2.+1.0, 2.+2.0, 2.+3.0, 2.+4.0, 2.+5.0, 2.+6.0, 2.+7.0, 2.+8.0, 2.+9.0, 2.+10.0, 2.+11.0]);
 
-        let matrix_2 = elemetwisematmul(&a_matrix, &a_matrix)?;
+        let matrix_2 = elemetwisematadd(&a_matrix, &a_matrix)?;
         stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
-        println!("After `elemetwisematmul`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![0.0*0.0, 1.0*1.0, 2.0*2.0, 3.0*3.0, 4.0*4.0, 5.0*5.0, 6.0*6.0, 7.0*7.0, 8.0*8.0, 9.0*9.0, 10.0*10.0, 11.0*11.0]);
-
-
-        let out_matrix = matmul(&a_matrix, &b_matrix)?;
-        stream.memcpy_dtoh(&out_matrix.data, &mut c_host)?;
-        println!("After `matmul`: c_host {:?}", c_host);
-        assert_eq!(c_host, vec![10.0, 13.0, 28.0, 40.0, 46.0, 67.0, 64.0, 94.0]);
+        println!("After `elemetwisematadd`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.0+0.0, 1.0+1.0, 2.0+2.0, 3.0+3.0, 4.0+4.0, 5.0+5.0, 6.0+6.0, 7.0+7.0, 8.0+8.0, 9.0+9.0, 10.0+10.0, 11.0+11.0]);
 
         Ok(())
     }
