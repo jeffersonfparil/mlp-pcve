@@ -29,6 +29,71 @@ const SIGMOID: &str = "
     }
 ";
 
+const SIGMOID_DERIVATIVE: &str = "
+    extern \"C\" __global__ void cuSigmoidDerivative(float* A, float* B, int n_rows, int n_cols) {
+        // Sigmoid activation kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            float s = 1.00 / (1.00 + exp(A[idx]));
+            B[idx] = s * (1.00 - s);
+        }
+    }
+";
+
+const HYPERBOLICTANGENT: &str = "
+    extern \"C\" __global__ void cuHyperbolicTangent(float* A, float* B, int n_rows, int n_cols) {
+        // Sigmoid activation kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            float a = exp(A[idx]);
+            float b = exp(-A[idx]);
+            B[idx] = (a - b) / (a + b);
+        }
+    }
+";
+
+const HYPERBOLICTANGENT_DERIVATIVE: &str = "
+    extern \"C\" __global__ void cuHyperbolicTangentDerivative(float* A, float* B, int n_rows, int n_cols) {
+        // Sigmoid activation kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            float a = exp(A[idx]);
+            float b = exp(-A[idx]);
+            float t = (a - b) / (a + b);
+            B[idx] = 1.00 - pow(t, 2);
+        }
+    }
+";
 
 pub fn sigmoid<T: Default + Clone + cudarc::driver::DeviceRepr>(
     a: &Matrix<T>,
@@ -38,6 +103,120 @@ pub fn sigmoid<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let stream: Arc<CudaStream> = ctx.default_stream();
     let module: Arc<CudaModule> = ctx.load_module(ptx)?;
     let f: CudaFunction = module.load_function("cuSigmoid")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+pub fn sigmoidderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(SIGMOID_DERIVATIVE)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuSigmoidDerivative")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+pub fn hyperbolictangent<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuHyperbolicTangent")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+pub fn hyperbolictangentderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT_DERIVATIVE)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuHyperbolicTangentDerivative")?;
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -108,6 +287,22 @@ mod tests {
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `sigmoid`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![0.5, 0.26894143, 0.11920292, 0.047425874, 0.01798621, 0.006692851, 0.002472623, 0.0009110512, 0.00033535014, 0.00012339458, 4.539787e-5, 1.670142e-5]);
+
+        let matrix_2 = sigmoidderivative(&a_matrix)?;
+        stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `sigmoidderivative`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.25, 0.19661194, 0.10499358, 0.04517666, 0.017662706, 0.0066480567, 0.0024665091, 0.00091022113, 0.00033523768, 0.00012337936, 4.5395806e-5, 1.6701142e-5]);
+
+        let matrix_3 = hyperbolictangent(&a_matrix)?;
+        stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `hyperbolictangent`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec! [0.0, 0.7615942, 0.9640275, 0.9950547, 0.9993293, 0.9999091, 0.9999877, 0.99999845, 0.9999998, 1.0, 1.0, 1.0]);
+
+        let matrix_4 = hyperbolictangentderivative(&a_matrix)?;
+        stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `hyperbolictangentderivative`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![1.0, 0.41997433, 0.070650935, 0.009866118, 0.0013408661, 0.00018179417, 2.4557114e-5, 3.0994415e-6, 3.5762787e-7, 0.0, 0.0, 0.0]);
+
 
         Ok(())
     }
