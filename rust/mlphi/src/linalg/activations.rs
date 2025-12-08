@@ -31,7 +31,7 @@ const SIGMOID: &str = "
 
 const SIGMOID_DERIVATIVE: &str = "
     extern \"C\" __global__ void cuSigmoidDerivative(float* A, float* B, int n_rows, int n_cols) {
-        // Sigmoid activation kernel implementation
+        // Sigmoid activation derivative kernel implementation
         // Arguments:
         //  - A: input matrix (n_rows x n_cols)
         //  - B: output matrix (n_rows x n_cols)
@@ -52,7 +52,7 @@ const SIGMOID_DERIVATIVE: &str = "
 
 const HYPERBOLICTANGENT: &str = "
     extern \"C\" __global__ void cuHyperbolicTangent(float* A, float* B, int n_rows, int n_cols) {
-        // Sigmoid activation kernel implementation
+        // Hyperbolic tangent activation kernel implementation
         // Arguments:
         //  - A: input matrix (n_rows x n_cols)
         //  - B: output matrix (n_rows x n_cols)
@@ -74,7 +74,7 @@ const HYPERBOLICTANGENT: &str = "
 
 const HYPERBOLICTANGENT_DERIVATIVE: &str = "
     extern \"C\" __global__ void cuHyperbolicTangentDerivative(float* A, float* B, int n_rows, int n_cols) {
-        // Sigmoid activation kernel implementation
+        // Hyperbolic tangent derivative activation kernel implementation
         // Arguments:
         //  - A: input matrix (n_rows x n_cols)
         //  - B: output matrix (n_rows x n_cols)
@@ -91,6 +91,102 @@ const HYPERBOLICTANGENT_DERIVATIVE: &str = "
             float b = exp(-A[idx]);
             float t = (a - b) / (a + b);
             B[idx] = 1.00 - pow(t, 2);
+        }
+    }
+";
+
+const RELU: &str = "
+    extern \"C\" __global__ void cuReLU(float* A, float* B, int n_rows, int n_cols) {
+        // Rectified linear unit activation kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            if (A[idx] > 0) {
+                B[idx] = A[idx];
+            } else {
+                B[idx] = 0;
+            }
+        }
+    }
+";
+
+const RELU_DERIVATIVE: &str = "
+    extern \"C\" __global__ void cuReLUDerivative(float* A, float* B, int n_rows, int n_cols) {
+        // Rectified linear unit activation derivative kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            if (A[idx] > 0) {
+                B[idx] = 1.0;
+            } else {
+                B[idx] = 0.0;
+            }
+        }
+    }
+";
+
+const LEAKYRELU: &str = "
+    extern \"C\" __global__ void cuLeakyReLU(float a, float* A, float* B, int n_rows, int n_cols) {
+        // Leaky rectified linear unit activation kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            if (A[idx] > 0) {
+                B[idx] = A[idx];
+            } else {
+                B[idx] = a * A[idx];
+            }
+        }
+    }
+";
+
+const LEAKYRELU_DERIVATIVE: &str = "
+    extern \"C\" __global__ void cuLeakyReLUDerivative(float a, float* A, float* B, int n_rows, int n_cols) {
+        // Leaky rectified linear unit activation derivative kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            if (A[idx] > 0) {
+                B[idx] = 1.0;
+            } else {
+                B[idx] = a;
+            }
         }
     }
 ";
@@ -247,6 +343,163 @@ pub fn hyperbolictangentderivative<T: Default + Clone + cudarc::driver::DeviceRe
     )
 }
 
+pub fn relu<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(RELU)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuReLU")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+pub fn reluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(RELU_DERIVATIVE)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuReLUDerivative")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+
+pub fn leakyrelu<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+    k: T,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(LEAKYRELU)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuLeakyReLU")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&k);
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
+pub fn leakyreluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
+    a: &Matrix<T>,
+    k: T,
+) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+    let ptx: Ptx = compile_ptx(LEAKYRELU_DERIVATIVE)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuLeakyReLUDerivative")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    builder.arg(&k);
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,13 +549,32 @@ mod tests {
         let matrix_3 = hyperbolictangent(&a_matrix)?;
         stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `hyperbolictangent`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec! [0.0, 0.7615942, 0.9640275, 0.9950547, 0.9993293, 0.9999091, 0.9999877, 0.99999845, 0.9999998, 1.0, 1.0, 1.0]);
+        assert_eq!(a_host, vec![0.0, 0.7615942, 0.9640275, 0.9950547, 0.9993293, 0.9999091, 0.9999877, 0.99999845, 0.9999998, 1.0, 1.0, 1.0]);
 
         let matrix_4 = hyperbolictangentderivative(&a_matrix)?;
         stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `hyperbolictangentderivative`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![1.0, 0.41997433, 0.070650935, 0.009866118, 0.0013408661, 0.00018179417, 2.4557114e-5, 3.0994415e-6, 3.5762787e-7, 0.0, 0.0, 0.0]);
 
+        let matrix_5 = relu(&a_matrix)?;
+        stream.memcpy_dtoh(&matrix_5.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `relu`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]);
+
+        let matrix_6 = reluderivative(&a_matrix)?;
+        stream.memcpy_dtoh(&matrix_6.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `reluderivative`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+
+        let matrix_7 = leakyrelu(&a_matrix, 0.1)?;
+        stream.memcpy_dtoh(&matrix_7.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `leakyrelu`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]);
+
+        let matrix_8 = leakyreluderivative(&a_matrix, 0.1)?;
+        stream.memcpy_dtoh(&matrix_8.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `leakyreluderivative`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![0.1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
 
         Ok(())
     }
