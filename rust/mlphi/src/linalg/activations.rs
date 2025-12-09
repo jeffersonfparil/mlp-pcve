@@ -3,8 +3,6 @@ use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
 use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::clone::Clone;
-use std::default::Default;
 use std::sync::Arc;
 
 const BLOCK_SIZE: u32 = 16;
@@ -191,9 +189,9 @@ const LEAKYRELU_DERIVATIVE: &str = "
     }
 ";
 
-pub fn sigmoid<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn sigmoid(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(SIGMOID)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -202,8 +200,8 @@ pub fn sigmoid<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -229,9 +227,9 @@ pub fn sigmoid<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn sigmoidderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn sigmoidderivative(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(SIGMOID_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -240,8 +238,8 @@ pub fn sigmoidderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -267,9 +265,9 @@ pub fn sigmoidderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn hyperbolictangent<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn hyperbolictangent(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -278,8 +276,8 @@ pub fn hyperbolictangent<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -305,9 +303,9 @@ pub fn hyperbolictangent<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn hyperbolictangentderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn hyperbolictangentderivative(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -316,8 +314,8 @@ pub fn hyperbolictangentderivative<T: Default + Clone + cudarc::driver::DeviceRe
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -343,9 +341,9 @@ pub fn hyperbolictangentderivative<T: Default + Clone + cudarc::driver::DeviceRe
     )
 }
 
-pub fn relu<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn relu(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(RELU)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -354,8 +352,8 @@ pub fn relu<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -381,9 +379,9 @@ pub fn relu<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn reluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn reluderivative(
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(RELU_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -392,8 +390,8 @@ pub fn reluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -420,10 +418,10 @@ pub fn reluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
 }
 
 
-pub fn leakyrelu<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-    k: T,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn leakyrelu(
+    a: &Matrix,
+    s: f32,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(LEAKYRELU)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -432,9 +430,9 @@ pub fn leakyrelu<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
-    builder.arg(&k);
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+    builder.arg(&s);
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -460,10 +458,10 @@ pub fn leakyrelu<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn leakyreluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-    k: T,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn leakyreluderivative(
+    a: &Matrix,
+    s: f32,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(LEAKYRELU_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -472,9 +470,9 @@ pub fn leakyreluderivative<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
-    builder.arg(&k);
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+    builder.arg(&s);
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);

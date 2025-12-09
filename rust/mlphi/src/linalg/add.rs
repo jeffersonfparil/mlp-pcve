@@ -3,8 +3,6 @@ use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
 use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::clone::Clone;
-use std::default::Default;
 use std::sync::Arc;
 
 const BLOCK_SIZE: u32 = 16;
@@ -52,10 +50,10 @@ const ELEMENTWISEMATADD: &str = "
     }
 ";
 
-pub fn scalarmatadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    s: T,
-    a: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn scalarmatadd(
+    s: f32,
+    a: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -64,8 +62,8 @@ pub fn scalarmatadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&s);
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
@@ -92,10 +90,10 @@ pub fn scalarmatadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
     )
 }
 
-pub fn elemetwisematadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
-    a: &Matrix<T>,
-    b: &Matrix<T>,
-) -> Result<Matrix<T>, Box<dyn std::error::Error>> {
+pub fn elemetwisematadd(
+    a: &Matrix,
+    b: &Matrix,
+) -> Result<Matrix, Box<dyn std::error::Error>> {
     if (a.n_rows != b.n_rows) | (a.n_cols != b.n_cols) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or a.n_cols ({}) != b.n_cols ({})",
@@ -110,8 +108,8 @@ pub fn elemetwisematadd<T: Default + Clone + cudarc::driver::DeviceRepr>(
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
-    let out: Vec<T> = vec![T::default(); (n_rows * n_cols) as usize];
-    let mut out_dev: CudaSlice<T> = stream.clone_htod(&out)?;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&b.data);
     builder.arg(&mut out_dev);

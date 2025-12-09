@@ -1,15 +1,17 @@
-use cudarc::driver::{CudaContext, CudaSlice, DeviceRepr};
+use cudarc::driver::{CudaContext, CudaSlice};
 use std::clone::Clone;
-use std::default::Default;
 use std::fmt;
 
 /// Matrix is stored in GPU memory
 /// I have decided to store data in a row-major format just because I feel like it :-P
+/// Also all floats are stored as f32
+#[repr(C)]
 #[derive(Debug)]
-pub struct Matrix<T: Default + Clone + cudarc::driver::DeviceRepr> {
+// pub struct Matrix<T: Default + Clone + cudarc::driver::DeviceRepr> {
+pub struct Matrix {
     pub n_rows: usize,
     pub n_cols: usize,
-    pub data: CudaSlice<T>,
+    pub data: CudaSlice<f32>,
 }
 
 /// Matrix errors
@@ -47,9 +49,9 @@ impl From<Box<dyn std::error::Error>> for MatrixError {
 }
 
 /// Implement methods for Matrix
-impl<T: DeviceRepr + Default + Clone> Matrix<T> {
+impl Matrix {
     /// Create a new Matrix
-    pub fn new(data: CudaSlice<T>, n_rows: usize, n_cols: usize) -> Result<Self, MatrixError> {
+    pub fn new(data: CudaSlice<f32>, n_rows: usize, n_cols: usize) -> Result<Self, MatrixError> {
         let n = data.len();
         if n != n_rows * n_cols {
             return Err(MatrixError::DimensionMismatch(format!(
