@@ -96,7 +96,7 @@ julia> ŷ = CuArray(reshape(sampleNormal(100, seed=123), (1, 100)));
 
 julia> y = CuArray(reshape(sampleNormal(100, seed=456), (1, 100)));
 
-julia> sum(Matrix(MAE_derivative(ŷ, y))[1, :]) == sum(x < 0.0 ? 1.0 : -1.0 for x in Matrix(ŷ - y)[1, :])
+julia> sum(Matrix(MAE_derivative(ŷ, y))[1, :]) == sum(x < 0.0 ? -1.0 : +1.0 for x in Matrix(ŷ - y)[1, :])
 true
 ```
 """
@@ -105,7 +105,7 @@ function MAE_derivative(
     y::CuArray{T,2},
 )::CuArray{T,2} where {T<:AbstractFloat}
     # T = Float32; n = 1_000; y = CUDA.randn(T, (1, n)); ŷ = CUDA.randn(T, (1, n))
-    map(x -> x < 0.0 ? 1.0 : -1.0, ŷ - y)
+    map(x -> x < 0.0 ? -1.0 : +1.0, ŷ - y)
 end
 
 """
