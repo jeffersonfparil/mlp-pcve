@@ -1,17 +1,37 @@
 use cudarc::driver::{CudaContext, CudaSlice};
-use std::clone::Clone;
 use std::fmt;
 
 /// Matrix is stored in GPU memory
 /// I have decided to store data in a row-major format just because I feel like it :-P
 /// Also all floats are stored as f32
 #[repr(C)]
-#[derive(Debug)]
-// pub struct Matrix<T: Default + Clone + cudarc::driver::DeviceRepr> {
+#[derive(Debug, Clone)]
 pub struct Matrix {
     pub n_rows: usize,
     pub n_cols: usize,
     pub data: CudaSlice<f32>,
+}
+
+/// Implement methods for Matrix
+impl Matrix {
+    pub fn new(data: CudaSlice<f32>, n_rows: usize, n_cols: usize) -> Result<Self, MatrixError> {
+        let n = data.len();
+        if n != n_rows * n_cols {
+            return Err(MatrixError::DimensionMismatch(format!(
+                "Data length {} does not match matrix dimensions {}x{}={}",
+                n,
+                n_rows,
+                n_cols,
+                n_rows * n_cols
+            )));
+        }
+        let out = Self {
+            n_rows: n_rows,
+            n_cols: n_cols,
+            data: data,
+        };
+        Ok(out)
+    }
 }
 
 /// Matrix errors
@@ -45,29 +65,6 @@ impl fmt::Display for MatrixError {
 impl From<Box<dyn std::error::Error>> for MatrixError {
     fn from(err: Box<dyn std::error::Error>) -> MatrixError {
         MatrixError::CompileError(err.to_string())
-    }
-}
-
-/// Implement methods for Matrix
-impl Matrix {
-    /// Create a new Matrix
-    pub fn new(data: CudaSlice<f32>, n_rows: usize, n_cols: usize) -> Result<Self, MatrixError> {
-        let n = data.len();
-        if n != n_rows * n_cols {
-            return Err(MatrixError::DimensionMismatch(format!(
-                "Data length {} does not match matrix dimensions {}x{}={}",
-                n,
-                n_rows,
-                n_cols,
-                n_rows * n_cols
-            )));
-        }
-        let out = Self {
-            n_rows: n_rows,
-            n_cols: n_cols,
-            data: data,
-        };
-        Ok(out)
     }
 }
 

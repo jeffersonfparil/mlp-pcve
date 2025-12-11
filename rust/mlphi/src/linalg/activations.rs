@@ -417,6 +417,7 @@ pub fn reluderivative(
     )
 }
 
+// Different function signatures as above:
 
 pub fn leakyrelu(
     a: &Matrix,
