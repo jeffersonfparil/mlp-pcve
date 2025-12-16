@@ -1,9 +1,10 @@
-use crate::linalg::matrix::{Matrix, MatrixError};
+use std::error::Error;
+use std::sync::Arc;
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
 use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::sync::Arc;
+use crate::linalg::matrix::{Matrix, MatrixError};
 
 const BLOCK_SIZE: u32 = 16;
 
@@ -79,7 +80,7 @@ const MATMUL: &str = "
 pub fn scalarmatmul(
     s: f32,
     a: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATMUL)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -119,7 +120,7 @@ pub fn scalarmatmul(
 pub fn elemetwisematmul(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (a.n_cols != b.n_cols) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or a.n_cols ({}) != b.n_cols ({})",
@@ -166,7 +167,7 @@ pub fn elemetwisematmul(
 pub fn matmul(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     if a.n_cols != b.n_rows {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_cols ({}) != b.n_rows ({})",
@@ -216,7 +217,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_f() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_f() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let (n, p, m): (usize, usize, usize) = (4, 3, 2);

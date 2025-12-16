@@ -1,11 +1,19 @@
-use crate::linalg::matrix::Matrix;
+use std::error::Error;
+use std::sync::Arc;
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
 use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::sync::Arc;
+use crate::linalg::matrix::{Matrix, MatrixError};
 
 const BLOCK_SIZE: u32 = 16;
+
+#[derive(Debug, Clone)]
+pub enum Cost {
+    MSE,
+    MAE,
+    HL, // needs work to account for the additional threshold parameter
+}
 
 const MSE: &str = "
     extern \"C\" __global__ void cuMSE(float* A, float* B, float* C, int n_rows, int n_cols) {
@@ -157,7 +165,7 @@ const HL_DERIVATIVE: &str = "
 pub fn mse(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MSE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -197,7 +205,7 @@ pub fn mse(
 pub fn msederivative(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MSE_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -237,7 +245,7 @@ pub fn msederivative(
 pub fn mae(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MAE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -277,7 +285,7 @@ pub fn mae(
 pub fn maederivative(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MAE_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -318,7 +326,7 @@ pub fn hl(
     a: &Matrix,
     b: &Matrix,
     d: f32,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HL)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -360,7 +368,7 @@ pub fn hlderivative(
     a: &Matrix,
     b: &Matrix,
     d: f32,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HL_DERIVATIVE)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -398,12 +406,29 @@ pub fn hlderivative(
     )
 }
 
+impl Cost {
+    fn cost(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+        match self {
+            Cost::MSE => mse(a, b),
+            Cost::MAE => mae(a, b),
+            _ => return Err(Box::new(MatrixError::DimensionMismatch(format!("Unimplemented cost function.")))),
+        }
+    }
+    fn derivative(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+        match self {
+            Cost::MSE => msederivative(a, b),
+            Cost::MAE => maederivative(a, b),
+            _ => return Err(Box::new(MatrixError::DimensionMismatch(format!("Unimplemented cost function.")))),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_f() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_f() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let (n, p): (usize, usize) = (4, 3);
@@ -427,26 +452,31 @@ mod tests {
         println!("Before: a_host {:?}", a_host);
         println!("Before: b_host {:?}", b_host);
 
-        let matrix_1 = mse(&a_matrix, &b_matrix)?;
+        let cost_1 = Cost::MSE;
+        let cost_2 = Cost::MAE;
+        let _cost_3 = Cost::HL;
+
+        let matrix_1 = cost_1.cost(&a_matrix, &b_matrix)?;
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `mse`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0, 72.0]);
 
-        let matrix_2 = msederivative(&a_matrix, &b_matrix)?;
+        let matrix_2 = cost_1.derivative(&a_matrix, &b_matrix)?;
         stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `msederivative`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![-12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0, -12.0]);
 
-        let matrix_3 = mae(&a_matrix, &b_matrix)?;
+        let matrix_3 = cost_2.cost(&a_matrix, &b_matrix)?;
         stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `mae`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
 
-        let matrix_4 = maederivative(&a_matrix, &b_matrix)?;
+        let matrix_4 = cost_2.derivative(&a_matrix, &b_matrix)?;
         stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `maederivative`: a_host {:?}", a_host);
         assert_eq!(a_host, vec![-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
 
+        // Needs work because of the additional threshold parameter
         let matrix_5 = hl(&a_matrix, &b_matrix, 1.0)?;
         stream.memcpy_dtoh(&matrix_5.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `hl`: a_host {:?}", a_host);

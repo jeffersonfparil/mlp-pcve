@@ -1,5 +1,6 @@
-use cudarc::driver::{CudaContext, CudaSlice};
+use std::error::Error;
 use std::fmt;
+use cudarc::driver::{CudaContext, CudaSlice};
 
 /// Matrix is stored in GPU memory
 /// I have decided to store data in a row-major format just because I feel like it :-P
@@ -34,6 +35,19 @@ impl Matrix {
     }
 }
 
+impl fmt::Display for Matrix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f, 
+            "{} rows x {} columns ({} length; {} bytes)",
+            self.n_rows,
+            self.n_cols,
+            self.data.len(),
+            self.data.num_bytes(),
+        )
+    }
+}
+
 /// Matrix errors
 #[derive(Debug)]
 pub enum MatrixError {
@@ -44,8 +58,8 @@ pub enum MatrixError {
     CompileError(String),
 }
 
-/// Implement std::error::Error for MatrixError
-impl std::error::Error for MatrixError {}
+/// Implement Error for MatrixError
+impl Error for MatrixError {}
 
 /// Implement std::fmt::Display for MatrixError
 impl fmt::Display for MatrixError {
@@ -60,10 +74,10 @@ impl fmt::Display for MatrixError {
     }
 }
 
-// Implement From trait from Box<dyn std::error::Error> to MatrixError
+// Implement From trait from Box<dyn Error> to MatrixError
 // This is to simplify error handling when using the cudarc error types and our MatrixError
-impl From<Box<dyn std::error::Error>> for MatrixError {
-    fn from(err: Box<dyn std::error::Error>) -> MatrixError {
+impl From<Box<dyn Error>> for MatrixError {
+    fn from(err: Box<dyn Error>) -> MatrixError {
         MatrixError::CompileError(err.to_string())
     }
 }
@@ -73,7 +87,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_matrix_new() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_matrix_new() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let mut a_host: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
