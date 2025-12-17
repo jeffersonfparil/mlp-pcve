@@ -8,7 +8,7 @@ use crate::linalg::matrix::{Matrix, MatrixError};
 
 const BLOCK_SIZE: u32 = 16;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Cost {
     MSE,
     MAE,
@@ -407,14 +407,14 @@ pub fn hlderivative(
 }
 
 impl Cost {
-    fn cost(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+    pub fn cost(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
         match self {
             Cost::MSE => mse(a, b),
             Cost::MAE => mae(a, b),
             _ => return Err(Box::new(MatrixError::DimensionMismatch(format!("Unimplemented cost function.")))),
         }
     }
-    fn derivative(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+    pub fn derivative(&self, a: &Matrix, b: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
         match self {
             Cost::MSE => msederivative(a, b),
             Cost::MAE => maederivative(a, b),

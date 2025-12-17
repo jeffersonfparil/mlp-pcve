@@ -8,7 +8,7 @@ use crate::linalg::matrix::{Matrix, MatrixError};
 
 const BLOCK_SIZE: u32 = 16;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Activation {
     Sigmoid,
     HyperbolicTangent,
@@ -511,7 +511,7 @@ pub fn leakyreluderivative(
 }
 
 impl Activation {
-    fn activate(&self, a: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+    pub fn activate(&self, a: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
         match self {
             Activation::Sigmoid => sigmoid(a),
             Activation::HyperbolicTangent => hyperbolictangent(a),
@@ -519,7 +519,7 @@ impl Activation {
             _ => return Err(Box::new(MatrixError::DimensionMismatch(format!("Unimplemented activation function.")))),
         }
     }
-    fn derivative(&self, a: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
+    pub fn derivative(&self, a: &Matrix,) -> Result<Matrix, Box<dyn Error>> {
         match self {
             Activation::Sigmoid => sigmoidderivative(a),
             Activation::HyperbolicTangent => hyperbolictangentderivative(a),

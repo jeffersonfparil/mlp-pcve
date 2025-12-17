@@ -3,8 +3,10 @@ use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
 use cudarc::driver::{CudaContext, CudaStream, CudaSlice};
 use crate::linalg::matrix::{Matrix, MatrixError};
-use crate::linalg::activations;
-use crate::linalg::costs;
+use crate::linalg::add::{scalarmatadd, elemetwisematadd, rowmatadd, colmatadd};
+use crate::linalg::mult::{scalarmatmul, elementwisematmul, rowmatmul, colmatmul, matmul};
+use crate::activations;
+use crate::costs;
 use crate::network::Network;
 
 impl Network{
@@ -12,14 +14,24 @@ impl Network{
         &mut self,
     ) -> Result<(), Box<dyn Error>> {
         let mut rng = ChaCha12Rng::seed_from_u64(self.seed as u64);
-        let x = (0..100).choose_multiple(&mut rng, 10);
-        println!("x={:?}", x);
-
-        // TODO //
         for i in 0..self.n_hidden_layers {
-            ()
+            let n_nodes = self.n_hidden_nodes[i];
+            let n_dropped_nodes = (self.dropout_rates[i] * self.n_hidden_nodes[i] as f32).round() as usize;
+            let idx_dropped_nodes = (0..n_nodes).choose_multiple(&mut rng, n_dropped_nodes);
+            let mut d = vec![1.0f32; n_nodes];
+            for i in idx_dropped_nodes {
+                d[i] = 0.0;
+            }
+            // TODO: rectify errors below...
+            let d_dev: CudaSlice<f32> = self.stream.clone_htod(&d)?;
+            let d_matrix = Matrix::new(d_dev, n_nodes, 1)?;
+            let x = rowmatmul(&self.weights_per_layer[i], &d_matrix)?;
+            let y = matmul(&x, &self.activations_per_layer[i])?;
+            let z = rowmatadd(&y, &self.biases_per_layer[i])?;
+            let a = self.activation.activate(&z)?;
+            self.weights_x_biases_per_layer[i] = z;
+            self.activations_per_layer[i] = a;
         }
-
         Ok(())
     }
 }
@@ -30,17 +42,39 @@ mod tests {
 
     #[test]
     fn test_forward() -> Result<(), Box<dyn Error>> {
+        let ctx = CudaContext::new(0)?;
+        let stream = ctx.default_stream();
+        let n: usize = 100;
+        let p: usize = 17;
+        let k: usize = 1;
+        let mut input_host: Vec<f32> = vec![0.0f32; p*n]; // p x n
+        let mut output_host: Vec<f32> = vec![0.0f32; n*k];
+        rand::fill(&mut input_host[..]);
+        rand::fill(&mut output_host[..]);
+        let input_dev: CudaSlice<f32> = stream.clone_htod(&input_host)?;
+        let output_dev: CudaSlice<f32> = stream.clone_htod(&output_host)?;
+        let input_matrix = Matrix::new(input_dev, p, n)?; // p x n matrix
+        println!("input_matrix: {}", input_matrix);
+        let output_matrix = Matrix::new(output_dev, n, k)?;
+        println!("output_matrix: {}", output_matrix);
         let mut network: Network = Network::new(
-            10_000,
-            1_000,
-            1,
+            stream,
+            input_matrix,
+            output_matrix,
             10,
             vec![256; 10],
             vec![0.0f32; 10],
             42,
         )?;
+        let i: usize = 1;
+        let mut a_host = vec![0.0f32; network.activations_per_layer[i].n_rows * network.activations_per_layer[i].n_cols];
+        println!("a_host[0]: {:?}", a_host[0]);
+        network.stream.memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
+        println!("weights_0 first 10 elements (before forward pass): {:?}", a_host[0]);
+        // Forward pass
         network.forwardpass()?;
-        println!("network: {}", network);
+        network.stream.memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
+        println!("weights_0 first 10 elements (after forward pass): {:?}", a_host[0]);
 
 
         Ok(())
