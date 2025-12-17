@@ -30,7 +30,7 @@ impl Network{
             let z = rowmatadd(&y, &self.biases_per_layer[i])?;
             let a = self.activation.activate(&z)?;
             self.weights_x_biases_per_layer[i] = z;
-            self.activations_per_layer[i] = a;
+            self.activations_per_layer[i+1] = a;
         }
         Ok(())
     }
@@ -72,6 +72,10 @@ mod tests {
         network.stream.memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
         println!("weights_0 first 10 elements (before forward pass): {:?}", a_host[0]);
         // Forward pass
+        network.forwardpass()?;
+        network.forwardpass()?;
+        network.forwardpass()?;
+        network.forwardpass()?;
         network.forwardpass()?;
         network.stream.memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
         println!("weights_0 first 10 elements (after forward pass): {:?}", a_host[0]);

@@ -159,7 +159,7 @@ impl Network {
                 let activations_matrix: Matrix = Matrix::new(activations_dev, p, n_observations)?;
                 activations_per_layer.push(activations_matrix);
             }
-            // rand::fill(&mut weights_host[..]);
+            rand::fill(&mut weights_host[..]);
             // rand::fill(&mut dweights_host[..]);
             // rand::fill(&mut biases_host[..]);
             // rand::fill(&mut dbiases_host[..]);
