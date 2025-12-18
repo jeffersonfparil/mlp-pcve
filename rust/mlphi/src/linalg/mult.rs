@@ -102,7 +102,7 @@ const MATMUL: &str = "
         //  - p: number of columns in A and rows in B
         // Assumes:
         //  - row-major storage
-        //  - matrices A and B are of compatible
+        //  - matrices A and B are compatible
         //  - matrix C is the correct size to hold the result
         int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index of C to compute
         int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index of C to compute
@@ -112,6 +112,84 @@ const MATMUL: &str = "
                 s += A[(i*p)+k] * B[(k*n_cols)+j];
             }
             C[(i*n_cols)+j] = s;
+        }
+    }
+";
+
+const MATMULT0: &str = "
+    extern \"C\" __global__ void cuMatMulT0(float* A, float* B, float*C, int p_a, int p_b, int n) {
+        // Matrix multiplication kernel implementation for X'X
+        // Arguments:
+        //  - A: left matrix (n x p_a)
+        //  - B: right matrix (n x p_b)
+        //  - C: output matrix (p_a x p_b)
+        //  - n: number of rows in A and B
+        //  - p_a: number of columns in A and number of rows in C
+        //  - p_b: number of columns in B and C
+        // Assumes:
+        //  - row-major storage
+        //  - transpose of matrix A and the matrix B are compatible
+        //  - matrix C is the correct size to hold the result
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index of C to compute
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index of C to compute
+        if ((i < p_a) && (j < p_b)) {
+            float s = 0.0f;
+            for (int k=0; k<n; k++) {
+                s += A[(k*p_a)+i] * B[(k*p_b)+j];
+            }
+            C[(i*p_b)+j] = s;
+        }
+    }
+";
+
+const MATMUL0T: &str = "
+    extern \"C\" __global__ void cuMatMul0T(float* A, float* B, float*C, int n_a, int n_b, int p) {
+        // Matrix multiplication kernel implementation for XX'
+        // Arguments:
+        //  - A: left matrix (n_a x p)
+        //  - B: right matrix (n_b x p)
+        //  - C: output matrix (n_a x n_b)
+        //  - n_a: number of rows in A and C
+        //  - n_b: number of rows in B and number of columns in C
+        //  - p: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrix A and the transpose of matrix B are compatible
+        //  - matrix C is the correct size to hold the result
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index of C to compute
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index of C to compute
+        if ((i < n_a) && (j < n_b)) {
+            float s = 0.0f;
+            for (int k=0; k<p; k++) {
+                s += A[(i*p)+k] * B[(j*p)+k];
+            }
+            C[(i*n_b)+j] = s;
+        }
+    }
+";
+
+const MATMULTT: &str = "
+    extern \"C\" __global__ void cuMatMulTT(float* A, float* B, float*C, int p_a, int n_b, int m) {
+        // Matrix multiplication kernel implementation for X'X
+        // Arguments:
+        //  - A: left matrix (m x p_a)
+        //  - B: right matrix (n_b x m)
+        //  - C: output matrix (p_a x n_b)
+        //  - m: number of rows in A and number of columns B
+        //  - p_a: number of columns in A and number of rows in C
+        //  - n_b: number of rows in B and number of columns C
+        // Assumes:
+        //  - row-major storage
+        //  - transpose of matrix A and the transpose of matrix B are compatible
+        //  - matrix C is the correct size to hold the result
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index of C to compute
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index of C to compute
+        if ((i < p_a) && (j < n_b)) {
+            float s = 0.0f;
+            for (int k=0; k<m; k++) {
+                s += A[(k*p_a)+i] * B[(j*m)+k];
+            }
+            C[(i*n_b)+j] = s;
         }
     }
 ";
@@ -342,12 +420,155 @@ pub fn matmul(
     )
 }
 
+pub fn matmult0(
+    a: &Matrix,
+    b: &Matrix,
+) -> Result<Matrix, Box<dyn Error>> {
+    if a.n_rows != b.n_rows {
+        return Err(Box::new(MatrixError::DimensionMismatch(format!(
+            "Dimension mismatch: a.n_rows ({}) != b.n_rows ({})",
+            a.n_rows, b.n_rows
+        ))));
+    }
+    let ptx: Ptx = compile_ptx(MATMULT0)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuMatMulT0")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let p_a: u32 = a.n_cols as u32;
+    let p_b: u32 = b.n_cols as u32;
+    let n: u32 = a.n_rows as u32;
+    let out: Vec<f32> = vec![0.0; (p_a * p_b) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&b.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&p_a);
+    builder.arg(&p_b);
+    builder.arg(&n);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (p_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (p_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, p_a as usize, p_b as usize)?
+    )
+}
+
+pub fn matmul0t(
+    a: &Matrix,
+    b: &Matrix,
+) -> Result<Matrix, Box<dyn Error>> {
+    if a.n_cols != b.n_cols {
+        return Err(Box::new(MatrixError::DimensionMismatch(format!(
+            "Dimension mismatch: a.n_cols ({}) != b.n_cols ({})",
+            a.n_cols, b.n_cols
+        ))));
+    }
+    let ptx: Ptx = compile_ptx(MATMUL0T)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuMatMul0T")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_a: u32 = a.n_rows as u32;
+    let n_b: u32 = b.n_rows as u32;
+    let p: u32 = a.n_cols as u32;
+    let out: Vec<f32> = vec![0.0; (n_a * n_b) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&b.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_a);
+    builder.arg(&n_b);
+    builder.arg(&p);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, n_a as usize, n_b as usize)?
+    )
+}
+
+pub fn matmultt(
+    a: &Matrix,
+    b: &Matrix,
+) -> Result<Matrix, Box<dyn Error>> {
+    if a.n_rows != b.n_cols {
+        return Err(Box::new(MatrixError::DimensionMismatch(format!(
+            "Dimension mismatch: a.n_rows ({}) != b.n_cols ({})",
+            a.n_rows, b.n_cols
+        ))));
+    }
+    let ptx: Ptx = compile_ptx(MATMULTT)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuMatMulTT")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let p_a: u32 = a.n_cols as u32;
+    let n_b: u32 = b.n_rows as u32;
+    let m: u32 = a.n_rows as u32;
+    let out: Vec<f32> = vec![0.0; (p_a * n_b) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+    builder.arg(&a.data);
+    builder.arg(&b.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&p_a);
+    builder.arg(&n_b);
+    builder.arg(&m);
+    let cfg = LaunchConfig {
+        block_dim: (
+            BLOCK_SIZE, 
+            BLOCK_SIZE, 
+            1
+        ),
+        grid_dim: (
+            (n_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (p_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(
+        Matrix::new(out_dev, p_a as usize, n_b as usize)?
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_f() -> Result<(), Box<dyn Error>> {
+    fn test_mult() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let (n, p, m): (usize, usize, usize) = (4, 3, 2);
@@ -356,12 +577,16 @@ mod tests {
         let (c_n_rows, c_n_cols): (usize, usize) = (n, m);
         let (d_n_rows, d_n_cols): (usize, usize) = (n, 1);
         let (e_n_rows, e_n_cols): (usize, usize) = (1, p);
+        let (f_n_rows, f_n_cols): (usize, usize) = (p, m);
+        let (g_n_rows, g_n_cols): (usize, usize) = (m, n);
 
         let mut a_host: Vec<f32> = (0..(a_n_rows * a_n_cols)).map(|x| x as f32).collect();
         let mut b_host: Vec<f32> = (0..(b_n_rows * b_n_cols)).map(|x| x as f32).collect();
         let mut c_host: Vec<f32> = (0..(c_n_rows * c_n_cols)).map(|x| x as f32).collect();
         let mut d_host: Vec<f32> = (0..(d_n_rows * d_n_cols)).map(|x| x as f32).collect();
         let mut e_host: Vec<f32> = (0..(e_n_rows * e_n_cols)).map(|x| x as f32).collect();
+        let mut f_host: Vec<f32> = (0..(f_n_rows * f_n_cols)).map(|x| x as f32).collect();
+        let mut g_host: Vec<f32> = (0..(g_n_rows * g_n_cols)).map(|x| x as f32).collect();
 
         // Copy data from CPU to GPU, i.e. from *_host into *_matrix
         let a_dev: CudaSlice<f32> = stream.clone_htod(&a_host)?;
@@ -369,28 +594,40 @@ mod tests {
         let c_dev: CudaSlice<f32> = stream.clone_htod(&c_host)?;
         let d_dev: CudaSlice<f32> = stream.clone_htod(&d_host)?;
         let e_dev: CudaSlice<f32> = stream.clone_htod(&e_host)?;
+        let f_dev: CudaSlice<f32> = stream.clone_htod(&f_host)?;
+        let g_dev: CudaSlice<f32> = stream.clone_htod(&g_host)?;
+
         let a_matrix = Matrix::new(a_dev, a_n_rows, a_n_cols)?;
         let b_matrix = Matrix::new(b_dev, b_n_rows, b_n_cols)?;
         let c_matrix = Matrix::new(c_dev, c_n_rows, c_n_cols)?;
         let d_matrix = Matrix::new(d_dev, d_n_rows, d_n_cols)?;
         let e_matrix = Matrix::new(e_dev, e_n_rows, e_n_cols)?;
+        let f_matrix = Matrix::new(f_dev, f_n_rows, f_n_cols)?;
+        let g_matrix = Matrix::new(g_dev, g_n_rows, g_n_cols)?;
 
         println!("a_matrix {:?}", a_matrix);
         println!("b_matrix {:?}", b_matrix);
         println!("c_matrix {:?}", c_matrix);
         println!("d_matrix {:?}", d_matrix);
-        println!("e_matrix {:?}", c_matrix);
+        println!("e_matrix {:?}", e_matrix);
+        println!("f_matrix {:?}", f_matrix);
+        println!("g_matrix {:?}", g_matrix);
 
         stream.memcpy_dtoh(&a_matrix.data, &mut a_host)?;
         stream.memcpy_dtoh(&b_matrix.data, &mut b_host)?;
         stream.memcpy_dtoh(&c_matrix.data, &mut c_host)?;
         stream.memcpy_dtoh(&d_matrix.data, &mut d_host)?;
         stream.memcpy_dtoh(&e_matrix.data, &mut e_host)?;
+        stream.memcpy_dtoh(&f_matrix.data, &mut f_host)?;
+        stream.memcpy_dtoh(&g_matrix.data, &mut g_host)?;
+
         println!("Before: a_host {:?}", a_host);
         println!("Before: b_host {:?}", b_host);
         println!("Before: c_host {:?}", c_host);
         println!("Before: d_host {:?}", d_host);
         println!("Before: e_host {:?}", e_host);
+        println!("Before: f_host {:?}", f_host);
+        println!("Before: g_host {:?}", g_host);
 
         let matrix_1 = scalarmatmul(2.0, &a_matrix)?;
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
@@ -416,6 +653,21 @@ mod tests {
         stream.memcpy_dtoh(&matrix_5.data, &mut c_host)?;
         println!("After `matmul`: c_host {:?}", c_host);
         assert_eq!(c_host, vec![10.0, 13.0, 28.0, 40.0, 46.0, 67.0, 64.0, 94.0]);
+
+        let matrix_6 = matmult0(&a_matrix, &c_matrix)?;
+        stream.memcpy_dtoh(&matrix_6.data, &mut f_host)?;
+        println!("After `matmult0`: f_host {:?}", f_host);
+        assert_eq!(f_host, vec![84.0, 102.0, 96.0, 118.0, 108.0, 134.0]);
+        
+        let matrix_7 = matmul0t(&c_matrix, &f_matrix)?;
+        stream.memcpy_dtoh(&matrix_7.data, &mut a_host)?;
+        println!("After `matmul0t`: a_host {:?}", a_host);
+        assert_eq!(a_host, vec![1.0, 3.0, 5.0, 3.0, 13.0, 23.0, 5.0, 23.0, 41.0, 7.0, 33.0, 59.0]);
+
+        let matrix_8 = matmultt(&b_matrix, &a_matrix)?;
+        stream.memcpy_dtoh(&matrix_8.data, &mut g_host)?;
+        println!("After `matmultt`: g_host {:?}", g_host);
+        assert_eq!(g_host, vec![10.0, 28.0, 46.0, 64.0, 13.0, 40.0, 67.0, 94.0]);
 
         Ok(())
     }

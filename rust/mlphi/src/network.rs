@@ -5,7 +5,6 @@ use cudarc::driver::{CudaContext, CudaStream, CudaSlice};
 use crate::linalg::matrix::{Matrix, MatrixError};
 use crate::activations;
 use crate::costs;
-// use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -101,8 +100,8 @@ impl Network {
     ) -> Result<Self,  Box<dyn Error>> {
         let n_observations: usize = input_data.n_cols;
         let n_input_nodes: usize = input_data.n_rows;
-        let n_output_nodes: usize = output_data.n_cols;
-        if n_observations != output_data.n_rows {
+        let n_output_nodes: usize = output_data.n_rows;
+        if n_observations != output_data.n_cols {
             return Err(Box::new(MatrixError::DimensionMismatch("We require the same number of observations for both input and output matrices.".to_string())));
         }
         if n_observations < 1 {
@@ -134,10 +133,13 @@ impl Network {
             n_nodes.push(n_hidden_nodes[i]);
         }
         n_nodes.push(n_output_nodes);
-        let mut predictions_host: Vec<f32> = vec![0f32; n_observations*n_output_nodes];
-        rand::fill(&mut predictions_host[..]);
+        let predictions_host: Vec<f32> = {
+            let mut tmp = vec![0f32; n_observations*n_output_nodes];
+            rand::fill(&mut tmp[..]);
+            tmp
+        };
         let predictions_dev: CudaSlice<f32> = stream.clone_htod(&predictions_host)?;
-        let predictions: Matrix = Matrix::new(predictions_dev, n_observations, n_output_nodes)?;
+        let predictions: Matrix = Matrix::new(predictions_dev, n_output_nodes, n_observations)?;
         let mut weights_per_layer: Vec<Matrix> = vec![];
         let mut weights_gradients_per_layers: Vec<Matrix> = vec![];
         let mut biases_per_layer: Vec<Matrix> = vec![];
@@ -147,23 +149,21 @@ impl Network {
         for i in 0..(n_nodes.len()-1) {
             let n: usize = n_nodes[i+1];
             let p: usize = n_nodes[i];
-            let mut weights_host: Vec<f32> = vec![0f32; n*p];
-            let mut dweights_host: Vec<f32> = vec![0f32; n*p];
-            let mut biases_host: Vec<f32> = vec![0f32; n*1];
-            let mut dbiases_host: Vec<f32> = vec![0f32; n*1];
-            let mut weights_x_biases_host: Vec<f32> = vec![0f32; n*n_observations];
+            let weights_host: Vec<f32> = {
+                let mut tmp = vec![0f32; n*p];
+                rand::fill(&mut tmp[..]);
+                tmp
+            };
+            let dweights_host: Vec<f32> = vec![0f32; n*p];
+            let biases_host: Vec<f32> = vec![0f32; n*1];
+            let dbiases_host: Vec<f32> = vec![0f32; n*1];
+            let weights_x_biases_host: Vec<f32> = vec![0f32; n*n_observations];
             if i > 0 {
-                let mut activations_host: Vec<f32> = vec![0f32; p*n_observations];
-                // rand::fill(&mut activations_host[..]);
+                let activations_host: Vec<f32> = vec![0f32; p*n_observations];
                 let activations_dev: CudaSlice<f32> = stream.clone_htod(&activations_host)?;
                 let activations_matrix: Matrix = Matrix::new(activations_dev, p, n_observations)?;
                 activations_per_layer.push(activations_matrix);
             }
-            rand::fill(&mut weights_host[..]);
-            // rand::fill(&mut dweights_host[..]);
-            // rand::fill(&mut biases_host[..]);
-            // rand::fill(&mut dbiases_host[..]);
-            // rand::fill(&mut weights_x_biases_host[..]);
             let weights_dev: CudaSlice<f32> = stream.clone_htod(&weights_host)?;
             let dweights_dev: CudaSlice<f32> = stream.clone_htod(&dweights_host)?;
             let biases_dev: CudaSlice<f32> = stream.clone_htod(&biases_host)?;
@@ -204,7 +204,6 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_network() -> Result<(), Box<dyn std::error::Error>> {
         let ctx = CudaContext::new(0)?;
@@ -213,14 +212,14 @@ mod tests {
         let p: usize = 123;
         let k: usize = 1;
         let mut input_host: Vec<f32> = vec![0.0f32; p*n]; // p x n
-        let mut output_host: Vec<f32> = vec![0.0f32; n*k];
+        let mut output_host: Vec<f32> = vec![0.0f32; k*n]; // k x n
         rand::fill(&mut input_host[..]);
         rand::fill(&mut output_host[..]);
         let input_dev: CudaSlice<f32> = stream.clone_htod(&input_host)?;
         let output_dev: CudaSlice<f32> = stream.clone_htod(&output_host)?;
         let input_matrix = Matrix::new(input_dev, p, n)?; // p x n matrix
         println!("input_matrix: {}", input_matrix);
-        let output_matrix = Matrix::new(output_dev, n, k)?;
+        let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
         let mut network: Network = Network::new(
             stream,

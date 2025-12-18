@@ -532,9 +532,8 @@ impl Activation {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_f() -> Result<(), Box<dyn Error>> {
+    fn test_activations() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let (n, p, m): (usize, usize, usize) = (4, 3, 2);

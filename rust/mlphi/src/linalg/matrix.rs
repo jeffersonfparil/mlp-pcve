@@ -85,9 +85,8 @@ impl From<Box<dyn Error>> for MatrixError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_matrix_new() -> Result<(), Box<dyn Error>> {
+    fn test_matrix() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let mut a_host: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];

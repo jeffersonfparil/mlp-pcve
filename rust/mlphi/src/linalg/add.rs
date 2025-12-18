@@ -4,6 +4,7 @@ use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
 use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
 use std::sync::Arc;
+use std::error::Error;
 
 const BLOCK_SIZE: u32 = 16;
 
@@ -88,11 +89,10 @@ const COLMATADD: &str = "
     }
 ";
 
-
 pub fn scalarmatadd(
     s: f32,
     a: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -132,7 +132,7 @@ pub fn scalarmatadd(
 pub fn elemetwisematadd(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (a.n_cols != b.n_cols) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or a.n_cols ({}) != b.n_cols ({})",
@@ -178,7 +178,7 @@ pub fn elemetwisematadd(
 pub fn rowmatadd(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (b.n_cols != 1) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
@@ -224,7 +224,7 @@ pub fn rowmatadd(
 pub fn colmatadd(
     a: &Matrix,
     b: &Matrix,
-) -> Result<Matrix, Box<dyn std::error::Error>> {
+) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_cols != b.n_cols) | (b.n_rows != 1) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
@@ -270,9 +270,8 @@ pub fn colmatadd(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_f() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_add() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let (n, p, m): (usize, usize, usize) = (4, 3, 2);
