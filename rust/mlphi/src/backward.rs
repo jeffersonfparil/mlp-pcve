@@ -1,73 +1,55 @@
-use std::error::Error;
-use rand::prelude::*;
-use rand_chacha::ChaCha12Rng;
-use cudarc::driver::{CudaContext, CudaSlice};
-use crate::linalg::matrix::Matrix;
-use crate::linalg::add::rowmatadd;
-use crate::linalg::mult::{scalarmatmul, elementwisematmul, matmult0, matmul0t, matmul};
 use crate::linalg::fold::rowsummat;
+use crate::linalg::matrix::Matrix;
+use crate::linalg::mult::{elementwisematmul, matmul0t, matmult0, scalarmatmul};
 use crate::network::Network;
+use cudarc::driver::{CudaContext, CudaSlice};
+use std::error::Error;
 
 impl Network {
-    pub fn backpropagation(
-        &mut self
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn backpropagation(&mut self) -> Result<(), Box<dyn Error>> {
         // Cost gradients with respect to (w.r.t.) the weights: ∂C/∂Wˡ = (∂C/∂Aᴸ) * (∂Aᴸ/∂Sˡ) * (∂Sˡ/∂Wˡ)
         // Starting with the output layer down to the first hidden layer
-        // Cost derivative with respect to (w.r.t.) to the activations at the output layer 
-        let dC_over_dAL = self.cost.derivative(&self.predictions, &self.targets)?;
-        println!("dC_over_dAL = {}", dC_over_dAL);
+        // Cost derivative with respect to (w.r.t.) to the activations at the output layer
+        let dc_over_da = self.cost.derivative(&self.predictions, &self.targets)?;
         // Activation derivative w.r.t. the sum of the weights (i.e. pre-activation values) at the output layer which is just 1.00 (linear activation) because this is a regression and not a classification network
-        let dAl_over_dSl = 1.00f32;
-        println!("dAl_over_dSl = {}", dAl_over_dSl);
+        let da_over_ds = 1.00f32;
         // Error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
-        let dC_over_dSL = scalarmatmul(dAl_over_dSl, &dC_over_dAL)?;
-        println!("dC_over_dSL = {}", dC_over_dSL);
-        let mut delta: Vec<Matrix> = vec![dC_over_dSL];
-        println!("delta[0] = {}", delta[0]);
+        let dc_over_ds = scalarmatmul(da_over_ds, &dc_over_da)?;
+        let mut delta: Vec<Matrix> = vec![dc_over_ds];
         // Now let us proceed from the last layer to the first hidden layer (i.e. just before the input layer)
         let n_total_layers = self.weights_per_layer.len();
-        println!("n_total_layers = {}", n_total_layers);
-        println!("self.n_hidden_layers = {}", self.n_hidden_layers);
-        for i in 1..self.n_hidden_layers {
-            println!("i={}", i);
-            println!("self.weights_per_layer[n_total_layers-i] = {}", self.weights_per_layer[n_total_layers-i]);
-            println!("delta[delta.len()-1] = {}", delta[delta.len()-1]);
+        for i in 1..(self.n_hidden_layers + 1) {
             // Back-propagated (notice the transposed weights) cost derivative w.r.t. the activations at the current layer
-            let dC_over_dAL = matmult0(&self.weights_per_layer[n_total_layers-i], &delta[delta.len()-1])?;
-            println!("dC_over_dAL = {}", dC_over_dAL);
+            let dc_over_da = matmult0(
+                &self.weights_per_layer[n_total_layers - i],
+                &delta[delta.len() - 1],
+            )?;
             // Activation derivative w.r.t. the sum of the weights (since Ω.S[end] == Ω.ŷ then the previous pre-activations are Ω.S[end-1])
-            let dAl_over_dSl = self.activation.derivative(&self.weights_x_biases_per_layer[n_total_layers-(i+1)])?;
-            println!("dAl_over_dSl = {}", dAl_over_dSl);
+            let da_over_ds = self
+                .activation
+                .derivative(&self.weights_x_biases_per_layer[n_total_layers - (i + 1)])?;
             // Chain rule-derived cost derivative w.r.t. the sum of the weights
-            let dC_over_dSL = elementwisematmul(&dC_over_dAL, &dAl_over_dSl)?;
-            println!("dC_over_dSL = {}", dC_over_dSL);
+            let dc_over_ds = elementwisematmul(&dc_over_da, &da_over_ds)?;
             // Add to Δ
-            delta.push(dC_over_dSL);
+            delta.push(dc_over_ds);
         }
-        // Calculate the gradients per layer
+        // Calculate the gradients per layer starting from the first hidden layer
         // We want ∂C/∂Wˡ = (∂C/∂Sˡ) * (∂Sˡ/∂Wˡ)
         // where: ∂Sˡ/∂Wˡ = Aˡ⁻¹, since: Sˡ = Wˡ*Aˡ⁻¹ + bˡ
-        // Then ∂C/∂Wˡ = (∂C/∂Sˡ) * (Aˡ⁻¹)'
-        
-        println!("n_total_layers = {}", n_total_layers);
-        println!("self.n_hidden_layers = {}", self.n_hidden_layers);
-        println!("delta.len() = {}", delta.len());
-        
-        // Δ = reverse(Δ)
+        // Then ∂C/∂Wˡ = (∂C/∂Sˡ) * (Aˡ⁻¹)' (similar applies to the biases)
         for i in 0..delta.len() {
-            let j = delta.len() - (i+1);
+            let j = delta.len() - (i + 1); // we start with the first hidden layer in Δ, i.e. we need to reverse Δ
             // Outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
             let x = matmul0t(&delta[j], &self.activations_per_layer[i])?;
-            println!("x={}", x);
+            // assert_eq!(self.weights_per_layer[i].n_rows, x.n_rows);
+            // assert_eq!(self.weights_per_layer[i].n_cols, x.n_cols);
             self.weights_per_layer[i] = x;
             // Sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
             let y = rowsummat(&self.stream, &delta[j])?;
-            println!("y = {}", y);
+            // assert_eq!(self.biases_per_layer[i].n_rows, y.n_rows);
+            // assert_eq!(self.biases_per_layer[i].n_cols, y.n_cols);
             self.biases_per_layer[i] = y;
         }
-
-
         Ok(())
     }
 }
@@ -75,6 +57,7 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::linalg::fold::summat;
     #[test]
     fn test_backward() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
@@ -82,8 +65,8 @@ mod tests {
         let n: usize = 100;
         let p: usize = 17;
         let k: usize = 1;
-        let mut input_host: Vec<f32> = vec![0.0f32; p*n]; // p x n
-        let mut output_host: Vec<f32> = vec![0.0f32; k*n]; // k x n
+        let mut input_host: Vec<f32> = vec![0.0f32; p * n]; // p x n
+        let mut output_host: Vec<f32> = vec![0.0f32; k * n]; // k x n
         rand::fill(&mut input_host[..]);
         rand::fill(&mut output_host[..]);
         let input_dev: CudaSlice<f32> = stream.clone_htod(&input_host)?;
@@ -101,9 +84,73 @@ mod tests {
             vec![0.0f32; 10],
             42,
         )?;
-        
+        // Assess the weights at the ith layer
+        let i = 1;
+        let mut a_host =
+            vec![0.0f32; network.weights_per_layer[i].n_rows * network.weights_per_layer[i].n_cols];
+        network
+            .stream
+            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+        println!(
+            "network.weights_per_layer[i] (before): {}",
+            network.weights_per_layer[i]
+        );
+        println!(
+            "a_host (before): [{}, {}, {}, ..., {}]",
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+        // network.forwardpass()?; // skip forwardpass to generate all zero weights because `weights_x_biases_per_layer` are initialised as all zeroes!
         network.backpropagation()?;
-
+        network
+            .stream
+            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+        println!(
+            "network.weights_per_layer[i] (after without forwardpass): {}",
+            network.weights_per_layer[i]
+        );
+        println!(
+            "a_host (after without forwardpass): [{}, {}, {}, ..., {}]",
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+        // Without prior forward pass all weights become zero because the `weights_x_biases_per_layer` are initialised as all zeroes!
+        let s = summat(&network.stream, &network.weights_per_layer[i])?;
+        println!("s (without forwardpass) = {}", s);
+        assert!(s == 0.0);
+        // Reset weights to random values then run with forward pass prior to backpropagation
+        for j in 0..(network.n_hidden_layers+1) {
+             let mut a_host =
+                vec![0.0f32; network.weights_per_layer[j].n_rows * network.weights_per_layer[j].n_cols];
+            network
+                .stream
+                .memcpy_dtoh(&network.weights_per_layer[j].data, &mut a_host)?;
+            rand::fill(&mut a_host[..]);
+            network.weights_per_layer[j].data = network.stream.clone_htod(&a_host)?;
+        }
+        network.forwardpass()?;
+        network.backpropagation()?;
+        network
+            .stream
+            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+        println!(
+            "network.weights_per_layer[i] (after with forwardpass): {}",
+            network.weights_per_layer[i]
+        );
+        println!(
+            "a_host (after with forwardpass): [{}, {}, {}, ..., {}]",
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+        let s = summat(&network.stream, &network.weights_per_layer[i])?;
+        println!("s (with forwardpass) = {}", s);
+        assert!(s != 0.0);
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
+use cudarc::driver::{CudaContext, CudaSlice};
 use std::error::Error;
 use std::fmt;
-use cudarc::driver::{CudaContext, CudaSlice};
 
 /// Matrix is stored in GPU memory
 /// I have decided to store data in a row-major format just because I feel like it :-P
@@ -38,7 +38,7 @@ impl Matrix {
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            f, 
+            f,
             "{} rows x {} columns ({} length; {} bytes)",
             self.n_rows,
             self.n_cols,

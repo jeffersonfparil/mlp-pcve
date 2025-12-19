@@ -1,11 +1,12 @@
 use cudarc::driver::DriverError;
 
-mod linalg;
 mod activations;
-mod costs;
-mod network;
-mod forward;
 mod backward;
+mod costs;
+mod forward;
+mod linalg;
+mod network;
+mod optimisers;
 
 fn main() -> Result<(), DriverError> {
     Ok(())

@@ -1,4 +1,4 @@
-pub mod matrix;
 pub mod add;
-pub mod mult;
 pub mod fold;
+pub mod matrix;
+pub mod mult;

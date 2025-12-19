@@ -1,105 +1,73 @@
-use crate::linalg::matrix::{Matrix, MatrixError};
-use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
-use cudarc::nvrtc::compile_ptx;
-use cudarc::nvrtc::safe::Ptx;
-use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::sync::Arc;
+use crate::linalg::matrix::Matrix;
+use cudarc::driver::safe::CudaContext;
+use cudarc::driver::{CudaSlice, CudaStream};
 use std::error::Error;
+use std::sync::Arc;
 
-pub fn summat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<f32, Box<dyn Error>> {
+pub fn summat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<f32, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
-    Ok(
-        a_host.iter().fold(0.0, |sum, x| sum + x)
-    )
+    Ok(a_host.iter().fold(0.0, |sum, x| sum + x))
 }
 
-pub fn prodmat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<f32, Box<dyn Error>> {
+pub fn prodmat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<f32, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
-    Ok(
-        a_host.iter().fold(1.0, |prod, x| prod * x)
-    )
+    Ok(a_host.iter().fold(1.0, |prod, x| prod * x))
 }
 
-pub fn rowsummat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn rowsummat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
     let mut rowsums: Vec<f32> = vec![0.0f32; a.n_rows];
     for i in 0..a.n_rows {
         for j in 0..a.n_cols {
-            rowsums[i] += a_host[(i*a.n_cols) + j];
+            rowsums[i] += a_host[(i * a.n_cols) + j];
         }
     }
     let rowsums_dev: CudaSlice<f32> = stream.clone_htod(&rowsums)?;
-    Ok(
-        Matrix::new(rowsums_dev, a.n_rows, 1)?
-    )
+    Ok(Matrix::new(rowsums_dev, a.n_rows, 1)?)
 }
 
-pub fn colsummat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn colsummat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
     let mut colsums: Vec<f32> = vec![0.0f32; a.n_cols];
     for j in 0..a.n_cols {
         for i in 0..a.n_rows {
-            colsums[j] += a_host[(i*a.n_cols) + j];
+            colsums[j] += a_host[(i * a.n_cols) + j];
         }
     }
     println!("colsums = {:?}", colsums);
     let colsums_dev: CudaSlice<f32> = stream.clone_htod(&colsums)?;
-    Ok(
-        Matrix::new(colsums_dev, a.n_cols, 1)?
-    )
+    Ok(Matrix::new(colsums_dev, a.n_cols, 1)?)
 }
 
-pub fn rowprodmat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn rowprodmat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
     let mut rowprods: Vec<f32> = vec![1.0f32; a.n_rows];
     for i in 0..a.n_rows {
         for j in 0..a.n_cols {
-            rowprods[i] *= a_host[(i*a.n_cols) + j];
+            rowprods[i] *= a_host[(i * a.n_cols) + j];
         }
     }
     let rowprods_dev: CudaSlice<f32> = stream.clone_htod(&rowprods)?;
-    Ok(
-        Matrix::new(rowprods_dev, a.n_rows, 1)?
-    )
+    Ok(Matrix::new(rowprods_dev, a.n_rows, 1)?)
 }
 
-pub fn colprodmat(
-    stream: &Arc<CudaStream>,
-    a: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn colprodmat(stream: &Arc<CudaStream>, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let mut a_host: Vec<f32> = vec![0.0f32; a.n_rows * a.n_cols];
     stream.memcpy_dtoh(&a.data, &mut a_host)?;
     let mut colprods: Vec<f32> = vec![1.0f32; a.n_cols];
     for j in 0..a.n_cols {
         for i in 0..a.n_rows {
-            colprods[j] *= a_host[(i*a.n_cols) + j];
+            colprods[j] *= a_host[(i * a.n_cols) + j];
         }
     }
     println!("colprods = {:?}", colprods);
     let colprods_dev: CudaSlice<f32> = stream.clone_htod(&colprods)?;
-    Ok(
-        Matrix::new(colprods_dev, a.n_cols, 1)?
-    )
+    Ok(Matrix::new(colprods_dev, a.n_cols, 1)?)
 }
 
 #[cfg(test)]
@@ -112,11 +80,11 @@ mod tests {
         let a_host: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let a_dev: CudaSlice<f32> = stream.clone_htod(&a_host)?;
         let a_matrix = Matrix::new(a_dev, 2, 3)?;
-        
+
         let sum = summat(&stream, &a_matrix)?;
         println!("sum = {}", sum);
         assert_eq!(sum, 21.0);
-        
+
         let prod = prodmat(&stream, &a_matrix)?;
         println!("prod = {}", prod);
         assert_eq!(prod, 720.0);
@@ -126,29 +94,29 @@ mod tests {
         let mut rowsums_host: Vec<f32> = vec![0.0f32; a_matrix.n_rows];
         stream.memcpy_dtoh(&rowsums.data, &mut rowsums_host)?;
         println!("rowsums_host = {:?}", rowsums_host);
-        assert_eq!(rowsums_host, [1.0+2.0+3.0, 4.0+5.0+6.0]);
-        
+        assert_eq!(rowsums_host, [1.0 + 2.0 + 3.0, 4.0 + 5.0 + 6.0]);
+
         let colsums = colsummat(&stream, &a_matrix)?;
         println!("colsums = {}", colsums);
         let mut colsums_host: Vec<f32> = vec![0.0f32; a_matrix.n_cols];
         stream.memcpy_dtoh(&colsums.data, &mut colsums_host)?;
         println!("colsums_host = {:?}", colsums_host);
-        assert_eq!(colsums_host, [1.0+4.0, 2.0+5.0, 3.0+6.0]);
-        
+        assert_eq!(colsums_host, [1.0 + 4.0, 2.0 + 5.0, 3.0 + 6.0]);
+
         let rowprods = rowprodmat(&stream, &a_matrix)?;
         println!("rowprods = {}", rowprods);
         let mut rowprods_host: Vec<f32> = vec![0.0f32; a_matrix.n_rows];
         stream.memcpy_dtoh(&rowprods.data, &mut rowprods_host)?;
         println!("rowprods_host = {:?}", rowprods_host);
-        assert_eq!(rowprods_host, [1.0*2.0*3.0, 4.0*5.0*6.0]);
-        
+        assert_eq!(rowprods_host, [1.0 * 2.0 * 3.0, 4.0 * 5.0 * 6.0]);
+
         let colprods = colprodmat(&stream, &a_matrix)?;
         println!("colprods = {}", colprods);
         let mut colprods_host: Vec<f32> = vec![0.0f32; a_matrix.n_cols];
         stream.memcpy_dtoh(&colprods.data, &mut colprods_host)?;
         println!("colprods_host = {:?}", colprods_host);
-        assert_eq!(colprods_host, [1.0*4.0, 2.0*5.0, 3.0*6.0]);
-                
+        assert_eq!(colprods_host, [1.0 * 4.0, 2.0 * 5.0, 3.0 * 6.0]);
+
         Ok(())
     }
 }

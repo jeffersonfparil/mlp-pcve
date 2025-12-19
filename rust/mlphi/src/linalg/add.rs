@@ -1,10 +1,10 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
+use cudarc::driver::safe::{CudaContext, CudaFunction, CudaModule, LaunchArgs};
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
-use cudarc::driver::safe::{CudaContext, CudaModule, CudaFunction, LaunchArgs};
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
 const BLOCK_SIZE: u32 = 16;
 
@@ -89,10 +89,7 @@ const COLMATADD: &str = "
     }
 ";
 
-pub fn scalarmatadd(
-    s: f32,
-    a: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn scalarmatadd(s: f32, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
     let stream: Arc<CudaStream> = ctx.default_stream();
@@ -109,30 +106,21 @@ pub fn scalarmatadd(
     builder.arg(&n_rows);
     builder.arg(&n_cols);
     let cfg = LaunchConfig {
-        block_dim: (
-            BLOCK_SIZE, 
-            BLOCK_SIZE, 
-            1
-        ),
+        block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
         grid_dim: (
             (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
             (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            1
+            1,
         ),
         shared_mem_bytes: 0,
     };
     unsafe {
         let _ = builder.launch(cfg);
     };
-    Ok(
-        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
-    )
+    Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
-pub fn elemetwisematadd(
-    a: &Matrix,
-    b: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn elemetwisematadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (a.n_cols != b.n_cols) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or a.n_cols ({}) != b.n_cols ({})",
@@ -155,30 +143,21 @@ pub fn elemetwisematadd(
     builder.arg(&n_rows);
     builder.arg(&n_cols);
     let cfg = LaunchConfig {
-        block_dim: (
-            BLOCK_SIZE, 
-            BLOCK_SIZE, 
-            1
-        ),
+        block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
         grid_dim: (
             (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
             (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            1
+            1,
         ),
         shared_mem_bytes: 0,
     };
     unsafe {
         let _ = builder.launch(cfg);
     };
-    Ok(
-        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
-    )
+    Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
-pub fn rowmatadd(
-    a: &Matrix,
-    b: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn rowmatadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (b.n_cols != 1) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
@@ -201,30 +180,21 @@ pub fn rowmatadd(
     builder.arg(&n_rows);
     builder.arg(&n_cols);
     let cfg = LaunchConfig {
-        block_dim: (
-            BLOCK_SIZE, 
-            BLOCK_SIZE, 
-            1
-        ),
+        block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
         grid_dim: (
             (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
             (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            1
+            1,
         ),
         shared_mem_bytes: 0,
     };
     unsafe {
         let _ = builder.launch(cfg);
     };
-    Ok(
-        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
-    )
+    Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
-pub fn colmatadd(
-    a: &Matrix,
-    b: &Matrix,
-) -> Result<Matrix, Box<dyn Error>> {
+pub fn colmatadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_cols != b.n_cols) | (b.n_rows != 1) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
@@ -247,24 +217,18 @@ pub fn colmatadd(
     builder.arg(&n_rows);
     builder.arg(&n_cols);
     let cfg = LaunchConfig {
-        block_dim: (
-            BLOCK_SIZE, 
-            BLOCK_SIZE, 
-            1
-        ),
+        block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
         grid_dim: (
             (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
             (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
-            1
+            1,
         ),
         shared_mem_bytes: 0,
     };
     unsafe {
         let _ = builder.launch(cfg);
     };
-    Ok(
-        Matrix::new(out_dev, n_rows as usize, n_cols as usize)?
-    )
+    Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
 #[cfg(test)]
@@ -319,22 +283,86 @@ mod tests {
         let matrix_1 = scalarmatadd(2.0, &a_matrix)?;
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `scalarmatadd`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![2.+0.0, 2.+1.0, 2.+2.0, 2.+3.0, 2.+4.0, 2.+5.0, 2.+6.0, 2.+7.0, 2.+8.0, 2.+9.0, 2.+10.0, 2.+11.0]);
+        assert_eq!(
+            a_host,
+            vec![
+                2. + 0.0,
+                2. + 1.0,
+                2. + 2.0,
+                2. + 3.0,
+                2. + 4.0,
+                2. + 5.0,
+                2. + 6.0,
+                2. + 7.0,
+                2. + 8.0,
+                2. + 9.0,
+                2. + 10.0,
+                2. + 11.0
+            ]
+        );
 
         let matrix_2 = elemetwisematadd(&a_matrix, &a_matrix)?;
         stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `elemetwisematadd`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![0.0+0.0, 1.0+1.0, 2.0+2.0, 3.0+3.0, 4.0+4.0, 5.0+5.0, 6.0+6.0, 7.0+7.0, 8.0+8.0, 9.0+9.0, 10.0+10.0, 11.0+11.0]);
+        assert_eq!(
+            a_host,
+            vec![
+                0.0 + 0.0,
+                1.0 + 1.0,
+                2.0 + 2.0,
+                3.0 + 3.0,
+                4.0 + 4.0,
+                5.0 + 5.0,
+                6.0 + 6.0,
+                7.0 + 7.0,
+                8.0 + 8.0,
+                9.0 + 9.0,
+                10.0 + 10.0,
+                11.0 + 11.0
+            ]
+        );
 
         let matrix_3 = rowmatadd(&a_matrix, &d_matrix)?;
         stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `rowmatadd`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![0.0+0.0, 1.0+0.0, 2.0+0.0, 3.0+1.0, 4.0+1.0, 5.0+1.0, 6.0+2.0, 7.0+2.0, 8.0+2.0, 9.0+3.0, 10.0+3.0, 11.0+3.0]);
+        assert_eq!(
+            a_host,
+            vec![
+                0.0 + 0.0,
+                1.0 + 0.0,
+                2.0 + 0.0,
+                3.0 + 1.0,
+                4.0 + 1.0,
+                5.0 + 1.0,
+                6.0 + 2.0,
+                7.0 + 2.0,
+                8.0 + 2.0,
+                9.0 + 3.0,
+                10.0 + 3.0,
+                11.0 + 3.0
+            ]
+        );
 
         let matrix_4 = colmatadd(&a_matrix, &e_matrix)?;
         stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `colmatadd`: a_host {:?}", a_host);
-        assert_eq!(a_host, vec![0.0+0.0, 1.0+1.0, 2.0+2.0, 3.0+0.0, 4.0+1.0, 5.0+2.0, 6.0+0.0, 7.0+1.0, 8.0+2.0, 9.0+0.0, 10.0+1.0, 11.0+2.0]);
+        assert_eq!(
+            a_host,
+            vec![
+                0.0 + 0.0,
+                1.0 + 1.0,
+                2.0 + 2.0,
+                3.0 + 0.0,
+                4.0 + 1.0,
+                5.0 + 2.0,
+                6.0 + 0.0,
+                7.0 + 1.0,
+                8.0 + 2.0,
+                9.0 + 0.0,
+                10.0 + 1.0,
+                11.0 + 2.0
+            ]
+        );
 
         Ok(())
     }
