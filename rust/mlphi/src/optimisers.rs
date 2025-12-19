@@ -115,8 +115,9 @@ pub fn adam(network: &mut Network, optimiser_parameters: &mut OptimiserParameter
             )?,
         )?;
     }
-
     // TODO
+    // the rest of the updates ....
+
     Ok(())
 }
 
