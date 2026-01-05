@@ -3,6 +3,9 @@ use crate::costs;
 use crate::linalg::fold::summat;
 use crate::linalg::matrix::{Matrix, MatrixError};
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
+use rand::prelude::*;
+use rand_chacha::ChaCha12Rng;
+use rand_distr::{Distribution, Normal};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
@@ -10,12 +13,12 @@ use std::sync::Arc;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Network {
-    pub stream: Arc<CudaStream>,                   // CUDA device stream
-    pub n_hidden_layers: usize,                    // number of hidden layers
-    pub n_hidden_nodes: Vec<usize>,                // number of nodes per hidden layer (k)
-    pub dropout_rates: Vec<f32>,                   // soft dropout rates per hidden layer (k)
-    pub targets: Matrix,                           // observed values (n x 1)
-    pub predictions: Matrix,                       // predictions (n x 1)
+    pub stream: Arc<CudaStream>,                  // CUDA device stream
+    pub n_hidden_layers: usize,                   // number of hidden layers
+    pub n_hidden_nodes: Vec<usize>,               // number of nodes per hidden layer (k)
+    pub dropout_rates: Vec<f32>,                  // soft dropout rates per hidden layer (k)
+    pub targets: Matrix,                          // observed values (n x 1)
+    pub predictions: Matrix,                      // predictions (n x 1)
     pub weights_per_layer: Vec<Matrix>, // weights ((n_hidden_nodes[i+1] x n_hidden_nodes[i]) for i in 0:(k-1))
     pub biases_per_layer: Vec<Matrix>,  // biases ((n_hidden_nodes[i+1] x 1) for i in 0:(k-1))
     pub weights_x_biases_per_layer: Vec<Matrix>, // summed weights (i.e. prior to activation function) ((n_hidden_nodes[i+1] x 1) for i in 0:(k-1))
@@ -86,74 +89,80 @@ impl fmt::Display for Network {
             match summat(&self.stream, &self.weights_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.weights_per_layer[self.weights_per_layer.len() - 1],
-            match summat(&self.stream, &self.weights_per_layer[self.weights_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.weights_per_layer[self.weights_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.biases_per_layer[0],
             match summat(&self.stream, &self.biases_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.biases_per_layer[self.biases_per_layer.len() - 1],
-            match summat(&self.stream, &self.biases_per_layer[self.biases_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.biases_per_layer[self.biases_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.weights_x_biases_per_layer[0],
             match summat(&self.stream, &self.weights_x_biases_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1],
-            match summat(&self.stream, &self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.activations_per_layer[0],
             match summat(&self.stream, &self.activations_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.activations_per_layer[self.activations_per_layer.len() - 1],
-            match summat(&self.stream, &self.activations_per_layer[self.activations_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.activations_per_layer[self.activations_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.weights_gradients_per_layer[0],
             match summat(&self.stream, &self.weights_gradients_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1],
-            match summat(&self.stream, &self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.biases_gradients_per_layer[0],
             match summat(&self.stream, &self.biases_gradients_per_layer[0]) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
             self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1],
-            match summat(&self.stream, &self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]) {
+            match summat(
+                &self.stream,
+                &self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]
+            ) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
-            }
-            ,
+            },
         )
     }
 }
@@ -217,6 +226,8 @@ impl Network {
             rand::fill(&mut tmp[..]);
             tmp
         };
+        let mut rng = ChaCha12Rng::seed_from_u64(seed as u64);
+        let normal = Normal::new(0.0, 0.1)?;
         let predictions_dev: CudaSlice<f32> = stream.clone_htod(&predictions_host)?;
         let predictions: Matrix = Matrix::new(predictions_dev, n_output_nodes, n_observations)?;
         let mut weights_per_layer: Vec<Matrix> = vec![];
@@ -228,11 +239,7 @@ impl Network {
         for i in 0..(n_nodes.len() - 1) {
             let n: usize = n_nodes[i + 1];
             let p: usize = n_nodes[i];
-            let weights_host: Vec<f32> = {
-                let mut tmp = vec![0f32; n * p];
-                rand::fill(&mut tmp[..]);
-                tmp
-            };
+            let weights_host: Vec<f32> = (&mut rng).sample_iter(normal).take(n * p).collect();
             let dweights_host: Vec<f32> = vec![0f32; n * p];
             let biases_host: Vec<f32> = vec![0f32; n * 1];
             let dbiases_host: Vec<f32> = vec![0f32; n * 1];

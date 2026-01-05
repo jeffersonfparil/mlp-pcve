@@ -29,6 +29,26 @@ const SCALARMATMUL: &str = "
     }
 ";
 
+const ELEMENTWISEMATINVERSE: &str = "
+    extern \"C\" __global__ void cuElementwiseMatInverse(float* A, float* B, int n_rows, int n_cols) {
+        // Element-wise multiplicative inverse kernel implementation
+        // Arguments:
+        //  - A: input matrix (n_rows x n_cols)
+        //  - B: output matrix (n_rows x n_cols)
+        //  - n_rows: number of rows in A and B
+        //  - n_cols: number of columns in A and B
+        // Assumes:
+        //  - row-major storage
+        //  - matrices A and B are of the same size
+        int i = (blockIdx.y * blockDim.y) + threadIdx.y; // Row index
+        int j = (blockIdx.x * blockDim.x) + threadIdx.x; // Column index
+        if ((i < n_rows) && (j < n_cols)) {
+            int idx = (i * n_cols) + j; // Linear index for the A and B matrices
+            B[idx] = 1.0f / A[idx];
+        }
+    }
+";
+
 const ELEMENTWISEMATMUL: &str = "
     extern \"C\" __global__ void cuElementwiseMatMul(float* A, float* B, float* C, int n_rows, int n_cols) {
         // Elementwise matrix multiplication kernel implementation
@@ -194,6 +214,8 @@ const MATMULTT: &str = "
     }
 ";
 
+///////////////////////////// DEPRECATED FROM HERE /////////////////////////////
+
 pub fn scalarmatmul(s: f32, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATMUL)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
@@ -206,6 +228,36 @@ pub fn scalarmatmul(s: f32, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
     let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&s);
+    builder.arg(&a.data);
+    builder.arg(&mut out_dev);
+    builder.arg(&n_rows);
+    builder.arg(&n_cols);
+    let cfg = LaunchConfig {
+        block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+        grid_dim: (
+            (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+            1,
+        ),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        let _ = builder.launch(cfg);
+    };
+    Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
+}
+
+pub fn elementwisematinverse(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
+    let ptx: Ptx = compile_ptx(ELEMENTWISEMATINVERSE)?;
+    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+    let stream: Arc<CudaStream> = ctx.default_stream();
+    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+    let f: CudaFunction = module.load_function("cuElementwiseMatInverse")?;
+    let mut builder: LaunchArgs = stream.launch_builder(&f);
+    let n_rows: u32 = a.n_rows as u32;
+    let n_cols: u32 = a.n_cols as u32;
+    let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+    let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
     builder.arg(&a.data);
     builder.arg(&mut out_dev);
     builder.arg(&n_rows);
@@ -492,6 +544,338 @@ pub fn matmultt(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     Ok(Matrix::new(out_dev, p_a as usize, n_b as usize)?)
 }
 
+///////////////////////////// DEPRECATED UNTIL HERE /////////////////////////////
+
+impl Matrix {
+    pub fn scalarmatmul(self: &Self, s: f32) -> Result<Self, Box<dyn Error>> {
+        let ptx: Ptx = compile_ptx(SCALARMATMUL)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuScalarMatMul")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&s);
+        builder.arg(&self.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn elementwisematinverse(self: &Self) -> Result<Self, Box<dyn Error>> {
+        let ptx: Ptx = compile_ptx(ELEMENTWISEMATINVERSE)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuElementwiseMatInverse")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn elementwisematmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_rows != b.n_rows) | (self.n_cols != b.n_cols) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
+                self.n_rows, b.n_rows, self.n_cols, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(ELEMENTWISEMATMUL)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuElementwiseMatMul")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn rowmatmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_rows != b.n_rows) | (b.n_cols != 1) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
+                self.n_rows, b.n_rows, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(ROWMATMUL)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuRowMatMul")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn colmatmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_cols != b.n_cols) | (b.n_rows != 1) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
+                self.n_cols, b.n_cols, b.n_rows
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(COLMATMUL)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuColMatMul")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn matmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if self.n_cols != b.n_rows {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_cols ({}) != b.n_rows ({})",
+                self.n_cols, b.n_rows
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(MATMUL)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuMatMul")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = b.n_cols as u32;
+        let p: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        builder.arg(&p);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn matmult0(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if self.n_rows != b.n_rows {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({})",
+                self.n_rows, b.n_rows
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(MATMULT0)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuMatMulT0")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let p_a: u32 = self.n_cols as u32;
+        let p_b: u32 = b.n_cols as u32;
+        let n: u32 = self.n_rows as u32;
+        let out: Vec<f32> = vec![0.0; (p_a * p_b) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&p_a);
+        builder.arg(&p_b);
+        builder.arg(&n);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (p_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (p_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, p_a as usize, p_b as usize)?)
+    }
+
+    pub fn matmul0t(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if self.n_cols != b.n_cols {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({})",
+                self.n_cols, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(MATMUL0T)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuMatMul0T")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_a: u32 = self.n_rows as u32;
+        let n_b: u32 = b.n_rows as u32;
+        let p: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_a * n_b) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_a);
+        builder.arg(&n_b);
+        builder.arg(&p);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_a as usize, n_b as usize)?)
+    }
+
+    pub fn matmultt(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if self.n_rows != b.n_cols {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_cols ({})",
+                self.n_rows, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(MATMULTT)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuMatMulTT")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let p_a: u32 = self.n_cols as u32;
+        let n_b: u32 = b.n_rows as u32;
+        let m: u32 = self.n_rows as u32;
+        let out: Vec<f32> = vec![0.0; (p_a * n_b) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&p_a);
+        builder.arg(&n_b);
+        builder.arg(&m);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_b + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (p_a + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, p_a as usize, n_b as usize)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,8 +941,8 @@ mod tests {
         println!("Before: f_host {:?}", f_host);
         println!("Before: g_host {:?}", g_host);
 
-        let matrix_1 = scalarmatmul(2.0, &a_matrix)?;
-        stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        let matrix_0 = a_matrix.scalarmatmul(2.0)?;
+        stream.memcpy_dtoh(&matrix_0.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `scalarmatmul`: a_host {:?}", a_host);
         assert_eq!(
             a_host,
@@ -578,7 +962,28 @@ mod tests {
             ]
         );
 
-        let matrix_2 = elementwisematmul(&a_matrix, &a_matrix)?;
+        let matrix_1 = a_matrix.elementwisematinverse()?;
+        stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
+        println!("After `elementwisematinverse`: a_host {:?}", a_host);
+        assert_eq!(
+            a_host,
+            vec![
+                1. / 0.0,
+                1. / 1.0,
+                1. / 2.0,
+                1. / 3.0,
+                1. / 4.0,
+                1. / 5.0,
+                1. / 6.0,
+                1. / 7.0,
+                1. / 8.0,
+                1. / 9.0,
+                1. / 10.0,
+                1. / 11.0
+            ]
+        );
+
+        let matrix_2 = a_matrix.elementwisematmul(&a_matrix)?;
         stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `elementwisematmul`: a_host {:?}", a_host);
         assert_eq!(
@@ -599,7 +1004,7 @@ mod tests {
             ]
         );
 
-        let matrix_3 = rowmatmul(&a_matrix, &d_matrix)?;
+        let matrix_3 = a_matrix.rowmatmul(&d_matrix)?;
         stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `rowmatmul`: a_host {:?}", a_host);
         assert_eq!(
@@ -620,7 +1025,7 @@ mod tests {
             ]
         );
 
-        let matrix_4 = colmatmul(&a_matrix, &e_matrix)?;
+        let matrix_4 = a_matrix.colmatmul(&e_matrix)?;
         stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `colmatmul`: a_host {:?}", a_host);
         assert_eq!(
@@ -641,17 +1046,17 @@ mod tests {
             ]
         );
 
-        let matrix_5 = matmul(&a_matrix, &b_matrix)?;
+        let matrix_5 = a_matrix.matmul(&b_matrix)?;
         stream.memcpy_dtoh(&matrix_5.data, &mut c_host)?;
         println!("After `matmul`: c_host {:?}", c_host);
         assert_eq!(c_host, vec![10.0, 13.0, 28.0, 40.0, 46.0, 67.0, 64.0, 94.0]);
 
-        let matrix_6 = matmult0(&a_matrix, &c_matrix)?;
+        let matrix_6 = a_matrix.matmult0(&c_matrix)?;
         stream.memcpy_dtoh(&matrix_6.data, &mut f_host)?;
         println!("After `matmult0`: f_host {:?}", f_host);
         assert_eq!(f_host, vec![84.0, 102.0, 96.0, 118.0, 108.0, 134.0]);
 
-        let matrix_7 = matmul0t(&c_matrix, &f_matrix)?;
+        let matrix_7 = c_matrix.matmul0t(&f_matrix)?;
         stream.memcpy_dtoh(&matrix_7.data, &mut a_host)?;
         println!("After `matmul0t`: a_host {:?}", a_host);
         assert_eq!(
@@ -661,7 +1066,7 @@ mod tests {
             ]
         );
 
-        let matrix_8 = matmultt(&b_matrix, &a_matrix)?;
+        let matrix_8 = b_matrix.matmultt(&a_matrix)?;
         stream.memcpy_dtoh(&matrix_8.data, &mut g_host)?;
         println!("After `matmultt`: g_host {:?}", g_host);
         assert_eq!(g_host, vec![10.0, 28.0, 46.0, 64.0, 13.0, 40.0, 67.0, 94.0]);

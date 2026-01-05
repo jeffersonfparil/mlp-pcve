@@ -11,6 +11,20 @@ impl Network {
         // Starting with the output layer down to the first hidden layer
         // Cost derivative with respect to (w.r.t.) to the activations at the output layer
         let dc_over_da = self.cost.derivative(&self.predictions, &self.targets)?;
+
+        // let mut a_host =
+        //     vec![0.0f32; self.predictions.n_rows * self.predictions.n_cols];
+        // self
+        //     .stream
+        //     .memcpy_dtoh(&self.predictions.data, &mut a_host)?;
+        // println!(
+        //     "self.predictions: [{}, {}, {}, ..., {}]",
+        //     a_host[0],
+        //     a_host[1],
+        //     a_host[2],
+        //     a_host[a_host.len() - 1]
+        // );
+
         // Activation derivative w.r.t. the sum of the weights (i.e. pre-activation values) at the output layer which is just 1.00 (linear activation) because this is a regression and not a classification network
         let da_over_ds = 1.00f32;
         // Error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
@@ -41,14 +55,14 @@ impl Network {
             let j = delta.len() - (i + 1); // we start with the first hidden layer in Δ, i.e. we need to reverse Δ
             // Outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
             let x = matmul0t(&delta[j], &self.activations_per_layer[i])?;
-            // assert_eq!(self.weights_per_layer[i].n_rows, x.n_rows);
-            // assert_eq!(self.weights_per_layer[i].n_cols, x.n_cols);
-            self.weights_per_layer[i] = x;
+            // assert_eq!(self.weights_gradients_per_layer[i].n_rows, x.n_rows);
+            // assert_eq!(self.weights_gradients_per_layer[i].n_cols, x.n_cols);
+            self.weights_gradients_per_layer[i] = x;
             // Sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
             let y = rowsummat(&self.stream, &delta[j])?;
-            // assert_eq!(self.biases_per_layer[i].n_rows, y.n_rows);
-            // assert_eq!(self.biases_per_layer[i].n_cols, y.n_cols);
-            self.biases_per_layer[i] = y;
+            // assert_eq!(self.biases_gradients_per_layer[i].n_rows, y.n_rows);
+            // assert_eq!(self.biases_gradients_per_layer[i].n_cols, y.n_cols);
+            self.biases_gradients_per_layer[i] = y;
         }
         Ok(())
     }
@@ -86,69 +100,76 @@ mod tests {
         )?;
         // Assess the weights at the ith layer
         let i = 1;
-        let mut a_host =
-            vec![0.0f32; network.weights_per_layer[i].n_rows * network.weights_per_layer[i].n_cols];
+        let mut a_host = vec![
+            0.0f32;
+            network.weights_gradients_per_layer[i].n_rows
+                * network.weights_gradients_per_layer[i].n_cols
+        ];
         network
             .stream
-            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+            .memcpy_dtoh(&network.weights_gradients_per_layer[i].data, &mut a_host)?;
         println!(
-            "network.weights_per_layer[i] (before): {}",
-            network.weights_per_layer[i]
-        );
-        println!(
-            "a_host (before): [{}, {}, {}, ..., {}]",
+            "layer {} weights gradients (before backpropagation): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
             a_host[a_host.len() - 1]
         );
-        // network.forwardpass()?; // skip forwardpass to generate all zero weights because `weights_x_biases_per_layer` are initialised as all zeroes!
         network.backpropagation()?;
         network
             .stream
-            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+            .memcpy_dtoh(&network.weights_gradients_per_layer[i].data, &mut a_host)?;
         println!(
-            "network.weights_per_layer[i] (after without forwardpass): {}",
-            network.weights_per_layer[i]
-        );
-        println!(
-            "a_host (after without forwardpass): [{}, {}, {}, ..., {}]",
+            "layer {} weights gradients (after without forwardpass): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
             a_host[a_host.len() - 1]
         );
         // Without prior forward pass all weights become zero because the `weights_x_biases_per_layer` are initialised as all zeroes!
-        let s = summat(&network.stream, &network.weights_per_layer[i])?;
+        let s = summat(&network.stream, &network.weights_gradients_per_layer[i])?;
         println!("s (without forwardpass) = {}", s);
         assert!(s == 0.0);
         // Reset weights to random values then run with forward pass prior to backpropagation
-        for j in 0..(network.n_hidden_layers+1) {
-             let mut a_host =
-                vec![0.0f32; network.weights_per_layer[j].n_rows * network.weights_per_layer[j].n_cols];
+        for j in 0..(network.n_hidden_layers + 1) {
+            let mut a_host = vec![
+                0.0f32;
+                network.weights_gradients_per_layer[j].n_rows
+                    * network.weights_gradients_per_layer[j].n_cols
+            ];
             network
                 .stream
-                .memcpy_dtoh(&network.weights_per_layer[j].data, &mut a_host)?;
+                .memcpy_dtoh(&network.weights_gradients_per_layer[j].data, &mut a_host)?;
             rand::fill(&mut a_host[..]);
-            network.weights_per_layer[j].data = network.stream.clone_htod(&a_host)?;
+            network.weights_gradients_per_layer[j].data = network.stream.clone_htod(&a_host)?;
         }
         network.forwardpass()?;
-        network.backpropagation()?;
         network
             .stream
-            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+            .memcpy_dtoh(&network.weights_gradients_per_layer[i].data, &mut a_host)?;
         println!(
-            "network.weights_per_layer[i] (after with forwardpass): {}",
-            network.weights_per_layer[i]
-        );
-        println!(
-            "a_host (after with forwardpass): [{}, {}, {}, ..., {}]",
+            "layer {} weights gradients (after forwardpass): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
             a_host[a_host.len() - 1]
         );
-        let s = summat(&network.stream, &network.weights_per_layer[i])?;
+        network.backpropagation()?;
+        network
+            .stream
+            .memcpy_dtoh(&network.weights_gradients_per_layer[i].data, &mut a_host)?;
+        println!(
+            "layer {} weights gradients (after backpropagation WITH forwardpass): [{}, {}, {}, ..., {}]",
+            i,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+        let s = summat(&network.stream, &network.weights_gradients_per_layer[i])?;
         println!("s (with forwardpass) = {}", s);
         assert!(s != 0.0);
         Ok(())

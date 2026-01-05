@@ -89,6 +89,8 @@ const COLMATADD: &str = "
     }
 ";
 
+///////////////////////////// DEPRECATED FROM HERE /////////////////////////////
+
 pub fn scalarmatadd(s: f32, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SCALARMATADD)?;
     let ctx: Arc<CudaContext> = CudaContext::new(0)?;
@@ -120,7 +122,7 @@ pub fn scalarmatadd(s: f32, a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
-pub fn elemetwisematadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
+pub fn elementwisematadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     if (a.n_rows != b.n_rows) | (a.n_cols != b.n_cols) {
         return Err(Box::new(MatrixError::DimensionMismatch(format!(
             "Dimension mismatch: a.n_rows ({}) != b.n_rows ({}) and/or a.n_cols ({}) != b.n_cols ({})",
@@ -231,6 +233,152 @@ pub fn colmatadd(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     Ok(Matrix::new(out_dev, n_rows as usize, n_cols as usize)?)
 }
 
+///////////////////////////// DEPRECATED UNTIL HERE /////////////////////////////
+
+impl Matrix {
+    pub fn scalarmatadd(self: &Self, s: f32) -> Result<Self, Box<dyn Error>> {
+        let ptx: Ptx = compile_ptx(SCALARMATADD)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuScalarMatAdd")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&s);
+        builder.arg(&self.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn elementwisematadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_rows != b.n_rows) | (self.n_cols != b.n_cols) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
+                self.n_rows, b.n_rows, self.n_cols, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(ELEMENTWISEMATADD)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuElementwiseMatAdd")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn rowmatadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_rows != b.n_rows) | (b.n_cols != 1) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
+                self.n_rows, b.n_rows, b.n_cols
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(ROWMATADD)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuRowMatAdd")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+
+    pub fn colmatadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
+        if (self.n_cols != b.n_cols) | (b.n_rows != 1) {
+            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
+                self.n_cols, b.n_cols, b.n_rows
+            ))));
+        }
+        let ptx: Ptx = compile_ptx(COLMATADD)?;
+        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
+        let stream: Arc<CudaStream> = ctx.default_stream();
+        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
+        let f: CudaFunction = module.load_function("cuColMatAdd")?;
+        let mut builder: LaunchArgs = stream.launch_builder(&f);
+        let n_rows: u32 = self.n_rows as u32;
+        let n_cols: u32 = self.n_cols as u32;
+        let out: Vec<f32> = vec![0.0; (n_rows * n_cols) as usize];
+        let mut out_dev: CudaSlice<f32> = stream.clone_htod(&out)?;
+        builder.arg(&self.data);
+        builder.arg(&b.data);
+        builder.arg(&mut out_dev);
+        builder.arg(&n_rows);
+        builder.arg(&n_cols);
+        let cfg = LaunchConfig {
+            block_dim: (BLOCK_SIZE, BLOCK_SIZE, 1),
+            grid_dim: (
+                (n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                (n_rows + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            let _ = builder.launch(cfg);
+        };
+        Ok(Self::new(out_dev, n_rows as usize, n_cols as usize)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,7 +428,7 @@ mod tests {
         println!("Before: d_host {:?}", d_host);
         println!("Before: e_host {:?}", e_host);
 
-        let matrix_1 = scalarmatadd(2.0, &a_matrix)?;
+        let matrix_1 = a_matrix.scalarmatadd(2.0)?;
         stream.memcpy_dtoh(&matrix_1.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `scalarmatadd`: a_host {:?}", a_host);
         assert_eq!(
@@ -301,9 +449,9 @@ mod tests {
             ]
         );
 
-        let matrix_2 = elemetwisematadd(&a_matrix, &a_matrix)?;
+        let matrix_2 = a_matrix.elementwisematadd(&a_matrix)?;
         stream.memcpy_dtoh(&matrix_2.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
-        println!("After `elemetwisematadd`: a_host {:?}", a_host);
+        println!("After `elementwisematadd`: a_host {:?}", a_host);
         assert_eq!(
             a_host,
             vec![
@@ -322,7 +470,7 @@ mod tests {
             ]
         );
 
-        let matrix_3 = rowmatadd(&a_matrix, &d_matrix)?;
+        let matrix_3 = a_matrix.rowmatadd(&d_matrix)?;
         stream.memcpy_dtoh(&matrix_3.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `rowmatadd`: a_host {:?}", a_host);
         assert_eq!(
@@ -343,7 +491,7 @@ mod tests {
             ]
         );
 
-        let matrix_4 = colmatadd(&a_matrix, &e_matrix)?;
+        let matrix_4 = a_matrix.colmatadd(&e_matrix)?;
         stream.memcpy_dtoh(&matrix_4.data, &mut a_host)?; // does not interfere with a_matrix because the data in a_host is in CPU while a_matrix is in GPU
         println!("After `colmatadd`: a_host {:?}", a_host);
         assert_eq!(

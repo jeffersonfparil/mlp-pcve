@@ -1,4 +1,3 @@
-use crate::linalg::add::rowmatadd;
 use crate::linalg::matrix::Matrix;
 use crate::linalg::mult::{matmul, rowmatmul};
 use crate::network::Network;
@@ -9,7 +8,7 @@ use std::error::Error;
 
 impl Network {
     pub fn forwardpass(&mut self) -> Result<(), Box<dyn Error>> {
-        // Updates: 
+        // Updates:
         //  1. weights_x_biases_per_layer,
         //  2. activations_per_layer, and
         //  3. predictions.
@@ -33,18 +32,50 @@ impl Network {
             };
             // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_rows == self.weights_x_biases_per_layer[i].n_rows);
             // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_cols == self.weights_x_biases_per_layer[i].n_cols);
-            self.weights_x_biases_per_layer[i] = rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?;
+            self.weights_x_biases_per_layer[i] =
+                weights_x_dropout.rowmatadd(&self.biases_per_layer[i])?;
             // assert!(self.weights_x_biases_per_layer[i].n_rows == self.activations_per_layer[i + 1].n_rows);
             // assert!(self.weights_x_biases_per_layer[i].n_cols == self.activations_per_layer[i + 1].n_cols);
-            self.activations_per_layer[i + 1] = self.activation.activate(&self.weights_x_biases_per_layer[i])?;
+            self.activations_per_layer[i + 1] = self
+                .activation
+                .activate(&self.weights_x_biases_per_layer[i])?;
+
+            // let mut a_host =
+            //     vec![0.0f32; self.activations_per_layer[i].n_rows * self.activations_per_layer[i].n_cols];
+            // self
+            //     .stream
+            //     .memcpy_dtoh(&self.activations_per_layer[i].data, &mut a_host)?;
+            // println!(
+            //     "??????? layer {}: [{}, {}, {}, ..., {}]",
+            //     i,
+            //     a_host[0],
+            //     a_host[1],
+            //     a_host[2],
+            //     a_host[a_host.len() - 1]
+            // );
         }
         let n = self.n_hidden_layers;
         let weights_x_dropout = matmul(&self.weights_per_layer[n], &self.activations_per_layer[n])?;
-        self.weights_x_biases_per_layer[n] = rowmatadd(&weights_x_dropout, &self.biases_per_layer[n])?;
+
+        // let mut a_host =
+        //     vec![0.0f32; self.activations_per_layer[n].n_rows * self.activations_per_layer[n].n_cols];
+        // self
+        //     .stream
+        //     .memcpy_dtoh(&self.activations_per_layer[n].data, &mut a_host)?;
+        // println!(
+        //     "???????: [{}, {}, {}, ..., {}]",
+        //     a_host[0],
+        //     a_host[1],
+        //     a_host[2],
+        //     a_host[a_host.len() - 1]
+        // );
+
+        self.weights_x_biases_per_layer[n] =
+            weights_x_dropout.rowmatadd(&self.biases_per_layer[n])?;
         // assert!(self.predictions.n_rows == self.weights_x_biases_per_layer[n].n_rows);
         // assert!(self.predictions.n_cols == self.weights_x_biases_per_layer[n].n_cols);
         self.predictions = self.weights_x_biases_per_layer[n].clone();
-        
+
         Ok(())
     }
 }
@@ -78,7 +109,7 @@ mod tests {
             vec![0.0f32; 10],
             42,
         )?;
-        let i: usize = 1;
+        let i: usize = network.n_hidden_layers - 1;
         let mut a_host = vec![
             0.0f32;
             network.activations_per_layer[i].n_rows
@@ -88,7 +119,8 @@ mod tests {
             .stream
             .memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
         println!(
-            "weights_0 (before forward pass): [{}, {}, {}, ..., {}]",
+            "layer {} activations (before forward pass): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
@@ -100,7 +132,8 @@ mod tests {
             .stream
             .memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
         println!(
-            "weights_0 (after forward pass with weights between 0 and 1): [{}, {}, {}, ..., {}]",
+            "layer {} activations (after forward pass with random weights between 0 and 1): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
@@ -125,7 +158,8 @@ mod tests {
             .stream
             .memcpy_dtoh(&network.activations_per_layer[i].data, &mut a_host)?;
         println!(
-            "weights_0 (after forward pass with weights all set to 1): [{}, {}, {}, ..., {}]",
+            "layer {} activations (after forward pass with weights all set to 1): [{}, {}, {}, ..., {}]",
+            i,
             a_host[0],
             a_host[1],
             a_host[2],
