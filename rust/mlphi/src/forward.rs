@@ -1,5 +1,4 @@
 use crate::linalg::matrix::Matrix;
-use crate::linalg::mult::{matmul, rowmatmul};
 use crate::network::Network;
 use cudarc::driver::{CudaContext, CudaSlice};
 use rand::prelude::*;
@@ -25,10 +24,10 @@ impl Network {
                 }
                 let d_dev: CudaSlice<f32> = self.stream.clone_htod(&d)?;
                 let d_matrix = Matrix::new(d_dev, n_nodes, 1)?;
-                let x = rowmatmul(&self.weights_per_layer[i], &d_matrix)?;
-                matmul(&x, &self.activations_per_layer[i])?
+                let x = self.weights_per_layer[i].rowmatmul(&d_matrix)?;
+                x.matmul(&self.activations_per_layer[i])?
             } else {
-                matmul(&self.weights_per_layer[i], &self.activations_per_layer[i])?
+                self.weights_per_layer[i].matmul(&self.activations_per_layer[i])?
             };
             // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_rows == self.weights_x_biases_per_layer[i].n_rows);
             // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_cols == self.weights_x_biases_per_layer[i].n_cols);
@@ -55,7 +54,7 @@ impl Network {
             // );
         }
         let n = self.n_hidden_layers;
-        let weights_x_dropout = matmul(&self.weights_per_layer[n], &self.activations_per_layer[n])?;
+        let weights_x_dropout = self.weights_per_layer[n].matmul(&self.activations_per_layer[n])?;
 
         // let mut a_host =
         //     vec![0.0f32; self.activations_per_layer[n].n_rows * self.activations_per_layer[n].n_cols];

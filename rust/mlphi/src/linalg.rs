@@ -1,3 +1,4 @@
+pub mod abs;
 pub mod add;
 pub mod fold;
 pub mod matrix;

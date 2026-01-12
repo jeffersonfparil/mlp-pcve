@@ -1,6 +1,4 @@
-use crate::linalg::fold::rowsummat;
 use crate::linalg::matrix::Matrix;
-use crate::linalg::mult::{elementwisematmul, matmul0t, matmult0, scalarmatmul};
 use crate::network::Network;
 use cudarc::driver::{CudaContext, CudaSlice};
 use std::error::Error;
@@ -28,22 +26,20 @@ impl Network {
         // Activation derivative w.r.t. the sum of the weights (i.e. pre-activation values) at the output layer which is just 1.00 (linear activation) because this is a regression and not a classification network
         let da_over_ds = 1.00f32;
         // Error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
-        let dc_over_ds = scalarmatmul(da_over_ds, &dc_over_da)?;
+        let dc_over_ds = dc_over_da.scalarmatmul(da_over_ds)?;
         let mut delta: Vec<Matrix> = vec![dc_over_ds];
         // Now let us proceed from the last layer to the first hidden layer (i.e. just before the input layer)
         let n_total_layers = self.weights_per_layer.len();
         for i in 1..(self.n_hidden_layers + 1) {
             // Back-propagated (notice the transposed weights) cost derivative w.r.t. the activations at the current layer
-            let dc_over_da = matmult0(
-                &self.weights_per_layer[n_total_layers - i],
-                &delta[delta.len() - 1],
-            )?;
+            let dc_over_da =
+                self.weights_per_layer[n_total_layers - i].matmult0(&delta[delta.len() - 1])?;
             // Activation derivative w.r.t. the sum of the weights (since Ω.S[end] == Ω.ŷ then the previous pre-activations are Ω.S[end-1])
             let da_over_ds = self
                 .activation
                 .derivative(&self.weights_x_biases_per_layer[n_total_layers - (i + 1)])?;
             // Chain rule-derived cost derivative w.r.t. the sum of the weights
-            let dc_over_ds = elementwisematmul(&dc_over_da, &da_over_ds)?;
+            let dc_over_ds = dc_over_da.elementwisematmul(&da_over_ds)?;
             // Add to Δ
             delta.push(dc_over_ds);
         }
@@ -54,12 +50,12 @@ impl Network {
         for i in 0..delta.len() {
             let j = delta.len() - (i + 1); // we start with the first hidden layer in Δ, i.e. we need to reverse Δ
             // Outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
-            let x = matmul0t(&delta[j], &self.activations_per_layer[i])?;
+            let x = delta[j].matmul0t(&self.activations_per_layer[i])?;
             // assert_eq!(self.weights_gradients_per_layer[i].n_rows, x.n_rows);
             // assert_eq!(self.weights_gradients_per_layer[i].n_cols, x.n_cols);
             self.weights_gradients_per_layer[i] = x;
             // Sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
-            let y = rowsummat(&self.stream, &delta[j])?;
+            let y = delta[j].rowsummat(&self.stream)?;
             // assert_eq!(self.biases_gradients_per_layer[i].n_rows, y.n_rows);
             // assert_eq!(self.biases_gradients_per_layer[i].n_cols, y.n_cols);
             self.biases_gradients_per_layer[i] = y;
@@ -71,7 +67,6 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::linalg::fold::summat;
     #[test]
     fn test_backward() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
@@ -129,7 +124,7 @@ mod tests {
             a_host[a_host.len() - 1]
         );
         // Without prior forward pass all weights become zero because the `weights_x_biases_per_layer` are initialised as all zeroes!
-        let s = summat(&network.stream, &network.weights_gradients_per_layer[i])?;
+        let s = network.weights_gradients_per_layer[i].summat(&network.stream)?;
         println!("s (without forwardpass) = {}", s);
         assert!(s == 0.0);
         // Reset weights to random values then run with forward pass prior to backpropagation
@@ -169,7 +164,7 @@ mod tests {
             a_host[2],
             a_host[a_host.len() - 1]
         );
-        let s = summat(&network.stream, &network.weights_gradients_per_layer[i])?;
+        let s = network.weights_gradients_per_layer[i].summat(&network.stream)?;
         println!("s (with forwardpass) = {}", s);
         assert!(s != 0.0);
         Ok(())

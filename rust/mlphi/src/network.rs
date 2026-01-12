@@ -1,11 +1,10 @@
 use crate::activations;
 use crate::costs;
-use crate::linalg::fold::summat;
 use crate::linalg::matrix::{Matrix, MatrixError};
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
 use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
-use rand_distr::{Distribution, Normal};
+use rand_distr::Normal;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
@@ -86,80 +85,70 @@ impl fmt::Display for Network {
             self.activation,
             self.cost,
             self.weights_per_layer[0],
-            match summat(&self.stream, &self.weights_per_layer[0]) {
+            match self.weights_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_per_layer[self.weights_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.weights_per_layer[self.weights_per_layer.len() - 1]
-            ) {
+            match self.weights_per_layer[self.weights_per_layer.len() - 1].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer[0],
-            match summat(&self.stream, &self.biases_per_layer[0]) {
+            match self.biases_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer[self.biases_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.biases_per_layer[self.biases_per_layer.len() - 1]
-            ) {
+            match self.biases_per_layer[self.biases_per_layer.len() - 1].summat(&self.stream,) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer[0],
-            match summat(&self.stream, &self.weights_x_biases_per_layer[0]) {
+            match self.weights_x_biases_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]
-            ) {
+            match self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]
+                .summat(&self.stream,)
+            {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer[0],
-            match summat(&self.stream, &self.activations_per_layer[0]) {
+            match self.activations_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer[self.activations_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.activations_per_layer[self.activations_per_layer.len() - 1]
-            ) {
+            match self.activations_per_layer[self.activations_per_layer.len() - 1]
+                .summat(&self.stream)
+            {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer[0],
-            match summat(&self.stream, &self.weights_gradients_per_layer[0]) {
+            match self.weights_gradients_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]
-            ) {
+            match self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]
+                .summat(&self.stream)
+            {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer[0],
-            match summat(&self.stream, &self.biases_gradients_per_layer[0]) {
+            match self.biases_gradients_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1],
-            match summat(
-                &self.stream,
-                &self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]
-            ) {
+            match self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]
+                .summat(&self.stream)
+            {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },

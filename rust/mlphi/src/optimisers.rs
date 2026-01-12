@@ -1,10 +1,7 @@
-use crate::linalg::add::{elementwisematadd, scalarmatadd};
 use crate::linalg::matrix::Matrix;
-use crate::linalg::mult::{elementwisematinverse, elementwisematmul, scalarmatmul};
+use crate::network::Network;
 use std::error::Error;
 use std::fmt;
-// use crate::linalg::sqrt::elementwisematsqrt;
-use crate::network::Network;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -107,14 +104,10 @@ pub fn gradientdescent(
     optimiser_parameters: &mut OptimiserParameters,
 ) -> Result<(), Box<dyn Error>> {
     for i in 0..(network.n_hidden_layers + 1) {
-        network.weights_per_layer[i] = scalarmatmul(
-            optimiser_parameters.learning_rate,
-            &network.weights_gradients_per_layer[i],
-        )?;
-        network.biases_per_layer[i] = scalarmatmul(
-            optimiser_parameters.learning_rate,
-            &network.biases_gradients_per_layer[i],
-        )?;
+        network.weights_per_layer[i] = network.weights_gradients_per_layer[i]
+            .scalarmatmul(optimiser_parameters.learning_rate)?;
+        network.biases_per_layer[i] = network.biases_gradients_per_layer[i]
+            .scalarmatmul(optimiser_parameters.learning_rate)?;
     }
     Ok(())
 }
@@ -124,18 +117,18 @@ pub fn adam(
     optimiser_parameters: &mut OptimiserParameters,
 ) -> Result<(), Box<dyn Error>> {
     optimiser_parameters.time_step += 1;
+    let factor_first_moment: f32 = 1.00
+        / (1.00
+            - optimiser_parameters
+                .first_moment_decay
+                .powi(optimiser_parameters.time_step as i32));
+    let factor_second_moment: f32 = 1.00
+        / (1.00
+            - optimiser_parameters
+                .second_moment_decay
+                .powi(optimiser_parameters.time_step as i32));
     for i in 0..(network.n_hidden_layers + 1) {
         // Weights update
-        // optimiser_parameters.first_moments_of_weights_per_layer[i] = elementwisematadd(
-        //     &scalarmatmul(
-        //         optimiser_parameters.first_moment_decay,
-        //         &optimiser_parameters.first_moments_of_weights_per_layer[i],
-        //     )?,
-        //     &scalarmatmul(
-        //         1.00f32 - optimiser_parameters.first_moment_decay,
-        //         &network.weights_gradients_per_layer[i],
-        //     )?,
-        // )?;
         optimiser_parameters.first_moments_of_weights_per_layer[i] = optimiser_parameters
             .first_moments_of_weights_per_layer[i]
             .scalarmatmul(optimiser_parameters.first_moment_decay)?
@@ -143,121 +136,59 @@ pub fn adam(
                 &network.weights_gradients_per_layer[i]
                     .scalarmatmul(1.00f32 - optimiser_parameters.first_moment_decay)?,
             )?;
-
-        optimiser_parameters.second_moments_of_weights_per_layer[i] = elementwisematadd(
-            &scalarmatmul(
-                optimiser_parameters.second_moment_decay,
-                &optimiser_parameters.second_moments_of_weights_per_layer[i],
-            )?,
-            &scalarmatmul(
-                1.00f32 - optimiser_parameters.second_moment_decay,
-                &network.weights_gradients_per_layer[i],
-            )?,
+        optimiser_parameters.second_moments_of_weights_per_layer[i] = optimiser_parameters
+            .second_moments_of_weights_per_layer[i]
+            .scalarmatmul(optimiser_parameters.second_moment_decay)?
+            .elementwisematadd(
+                &network.weights_gradients_per_layer[i]
+                    .elementwisematpower(2.0)?
+                    .scalarmatmul(1.00f32 - optimiser_parameters.second_moment_decay)?,
+            )?;
+        let momentum = optimiser_parameters.first_moments_of_weights_per_layer[i]
+            .scalarmatmul(factor_first_moment)?;
+        let velocity = optimiser_parameters.second_moments_of_weights_per_layer[i]
+            .scalarmatmul(factor_second_moment)?;
+        network.weights_per_layer[i] = network.weights_per_layer[i].elementwisematadd(
+            &momentum
+                .scalarmatmul(optimiser_parameters.learning_rate)?
+                .elementwisematmul(
+                    &velocity
+                        .elementwisematsqrt()?
+                        .scalarmatadd(optimiser_parameters.epsilon)?
+                        .elementwisematinverse()?,
+                )?
+                .scalarmatmul(-1.0)?,
         )?;
-        let factor_moment_1 = 1.00
-            / (1.00
-                - optimiser_parameters
-                    .first_moment_decay
-                    .powi(optimiser_parameters.time_step as i32));
-        let factor_moment_2 = 1.00
-            / (1.00
-                - optimiser_parameters
-                    .second_moment_decay
-                    .powi(optimiser_parameters.time_step as i32));
-        let momentum = scalarmatmul(
-            factor_moment_1,
-            &optimiser_parameters.first_moments_of_weights_per_layer[i],
-        )?;
-        let velocity = scalarmatmul(
-            factor_moment_2,
-            &optimiser_parameters.second_moments_of_weights_per_layer[i],
-        )?;
-        // Ω.W[i] -= (η * momentum ./ (sqrt.(velocity) .+ state["ϵ"]))
-        network.weights_per_layer[i] = elementwisematadd(
-            &network.weights_per_layer[i],
-            &scalarmatmul(
-                -1.0,
-                &elementwisematmul(
-                    &scalarmatmul(optimiser_parameters.learning_rate, &momentum)?,
-                    &elementwisematinverse(&scalarmatadd(
-                        optimiser_parameters.epsilon,
-                        &velocity.elementwisematsqrt()?,
-                    )?)?,
-                )?,
-            )?,
-        )?;
-
-        let mut a_host = vec![
-            0.0f32;
-            optimiser_parameters.first_moments_of_weights_per_layer[i].n_rows
-                * optimiser_parameters.first_moments_of_weights_per_layer[i]
-                    .n_cols
-        ];
-        network.stream.memcpy_dtoh(
-            &optimiser_parameters.first_moments_of_weights_per_layer[i].data,
-            &mut a_host,
-        )?;
-        println!(
-            "????????? layer {}: [{}, {}, {}, ..., {}]",
-            i,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-
         // Biases update
-        optimiser_parameters.first_moments_of_biases_per_layer[i] = elementwisematadd(
-            &scalarmatmul(
-                optimiser_parameters.first_moment_decay,
-                &optimiser_parameters.first_moments_of_biases_per_layer[i],
-            )?,
-            &scalarmatmul(
-                1.00f32 - optimiser_parameters.first_moment_decay,
-                &network.biases_gradients_per_layer[i],
-            )?,
-        )?;
-        optimiser_parameters.second_moments_of_biases_per_layer[i] = elementwisematadd(
-            &scalarmatmul(
-                optimiser_parameters.second_moment_decay,
-                &optimiser_parameters.second_moments_of_biases_per_layer[i],
-            )?,
-            &scalarmatmul(
-                1.00f32 - optimiser_parameters.second_moment_decay,
-                &network.biases_gradients_per_layer[i],
-            )?,
-        )?;
-        let factor_moment_1 = 1.00
-            / (1.00
-                - optimiser_parameters
-                    .first_moment_decay
-                    .powi(optimiser_parameters.time_step as i32));
-        let factor_moment_2 = 1.00
-            / (1.00
-                - optimiser_parameters
-                    .second_moment_decay
-                    .powi(optimiser_parameters.time_step as i32));
-        let momentum = scalarmatmul(
-            factor_moment_1,
-            &optimiser_parameters.first_moments_of_biases_per_layer[i],
-        )?;
-        let velocity = scalarmatmul(
-            factor_moment_2,
-            &optimiser_parameters.second_moments_of_biases_per_layer[i],
-        )?;
-        // Ω.b[i] -= (η * momentum ./ (sqrt.(velocity) .+ state["ϵ"]))
-        network.biases_per_layer[i] = elementwisematadd(
-            &network.biases_per_layer[i],
-            &scalarmatmul(
-                -1.0,
-                &elementwisematmul(
-                    &scalarmatmul(optimiser_parameters.learning_rate, &momentum)?,
-                    &elementwisematinverse(&scalarmatadd(
-                        optimiser_parameters.epsilon,
-                        &velocity.elementwisematsqrt()?,
-                    )?)?,
-                )?,
-            )?,
+        optimiser_parameters.first_moments_of_biases_per_layer[i] = optimiser_parameters
+            .first_moments_of_biases_per_layer[i]
+            .scalarmatmul(optimiser_parameters.first_moment_decay)?
+            .elementwisematadd(
+                &network.biases_gradients_per_layer[i]
+                    .scalarmatmul(1.00f32 - optimiser_parameters.first_moment_decay)?,
+            )?;
+        optimiser_parameters.second_moments_of_biases_per_layer[i] = optimiser_parameters
+            .second_moments_of_biases_per_layer[i]
+            .scalarmatmul(optimiser_parameters.second_moment_decay)?
+            .elementwisematadd(
+                &network.biases_gradients_per_layer[i]
+                    .elementwisematpower(2.0)?
+                    .scalarmatmul(1.00f32 - optimiser_parameters.second_moment_decay)?,
+            )?;
+        let momentum = optimiser_parameters.first_moments_of_biases_per_layer[i]
+            .scalarmatmul(factor_first_moment)?;
+        let velocity = optimiser_parameters.second_moments_of_biases_per_layer[i]
+            .scalarmatmul(factor_second_moment)?;
+        network.biases_per_layer[i] = network.biases_per_layer[i].elementwisematadd(
+            &momentum
+                .scalarmatmul(optimiser_parameters.learning_rate)?
+                .elementwisematmul(
+                    &velocity
+                        .elementwisematsqrt()?
+                        .scalarmatadd(optimiser_parameters.epsilon)?
+                        .elementwisematinverse()?,
+                )?
+                .scalarmatmul(-1.0)?,
         )?;
     }
     Ok(())
@@ -267,7 +198,68 @@ pub fn adammax(
     network: &mut Network,
     optimiser_parameters: &mut OptimiserParameters,
 ) -> Result<(), Box<dyn Error>> {
-    // TODO
+    optimiser_parameters.time_step += 1;
+    let r_adj: f32 = optimiser_parameters.learning_rate
+        / (1.00
+            - optimiser_parameters
+                .first_moment_decay
+                .powi(optimiser_parameters.time_step as i32));
+    for i in 0..(network.n_hidden_layers + 1) {
+        // Weights update
+        optimiser_parameters.first_moments_of_weights_per_layer[i] = optimiser_parameters
+            .first_moments_of_weights_per_layer[i]
+            .scalarmatmul(optimiser_parameters.first_moment_decay)?
+            .elementwisematadd(
+                &network.weights_gradients_per_layer[i]
+                    .scalarmatmul(1.00f32 - optimiser_parameters.first_moment_decay)?,
+            )?;
+        let g1: Matrix = optimiser_parameters.second_moments_of_weights_per_layer[i]
+            .scalarmatmul(optimiser_parameters.second_moment_decay)?;
+        let g2: Matrix = network.weights_gradients_per_layer[i].elementwisematabs()?;
+        optimiser_parameters.second_moments_of_weights_per_layer[i] =
+            if g1.summat(&network.stream)? >= g2.summat(&network.stream)? {
+                g1
+            } else {
+                g2
+            };
+        network.weights_per_layer[i] = network.weights_per_layer[i].elementwisematadd(
+            &optimiser_parameters.first_moments_of_weights_per_layer[i]
+                .scalarmatmul(r_adj)?
+                .elementwisematmul(
+                    &optimiser_parameters.second_moments_of_weights_per_layer[i]
+                        .scalarmatadd(optimiser_parameters.epsilon)?
+                        .elementwisematinverse()?,
+                )?
+                .scalarmatmul(-1.0)?,
+        )?;
+        // Biases update
+        optimiser_parameters.first_moments_of_biases_per_layer[i] = optimiser_parameters
+            .first_moments_of_biases_per_layer[i]
+            .scalarmatmul(optimiser_parameters.first_moment_decay)?
+            .elementwisematadd(
+                &network.biases_gradients_per_layer[i]
+                    .scalarmatmul(1.00f32 - optimiser_parameters.first_moment_decay)?,
+            )?;
+        let g1: Matrix = optimiser_parameters.second_moments_of_biases_per_layer[i]
+            .scalarmatmul(optimiser_parameters.second_moment_decay)?;
+        let g2: Matrix = network.biases_gradients_per_layer[i].elementwisematabs()?;
+        optimiser_parameters.second_moments_of_biases_per_layer[i] =
+            if g1.summat(&network.stream)? >= g2.summat(&network.stream)? {
+                g1
+            } else {
+                g2
+            };
+        network.biases_per_layer[i] = network.biases_per_layer[i].elementwisematadd(
+            &optimiser_parameters.first_moments_of_biases_per_layer[i]
+                .scalarmatmul(r_adj)?
+                .elementwisematmul(
+                    &optimiser_parameters.second_moments_of_biases_per_layer[i]
+                        .scalarmatadd(optimiser_parameters.epsilon)?
+                        .elementwisematinverse()?,
+                )?
+                .scalarmatmul(-1.0)?,
+        )?;
+    }
     Ok(())
 }
 
@@ -277,6 +269,11 @@ impl Optimiser {
         network: &mut Network,
         optimiser_parameters: &mut OptimiserParameters,
     ) -> Result<(), Box<dyn Error>> {
+        _ = match self {
+            Optimiser::GradientDescent => gradientdescent(network, optimiser_parameters)?,
+            Optimiser::Adam => adam(network, optimiser_parameters)?,
+            Optimiser::AdamMax => adammax(network, optimiser_parameters)?,
+        };
         Ok(())
     }
 }
@@ -303,9 +300,9 @@ mod tests {
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
         let mut network: Network = Network::new(
-            stream,
-            input_matrix,
-            output_matrix,
+            stream.clone(),
+            input_matrix.clone(),
+            output_matrix.clone(),
             10,
             vec![256; 10],
             vec![0.0f32; 10],
@@ -318,9 +315,14 @@ mod tests {
         let i: usize = 1;
         let mut a_host =
             vec![0.0f32; network.weights_per_layer[i].n_rows * network.weights_per_layer[i].n_cols];
+        let mut b_host =
+            vec![0.0f32; network.biases_per_layer[i].n_rows * network.biases_per_layer[i].n_cols];
         network
             .stream
             .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+        network
+            .stream
+            .memcpy_dtoh(&network.biases_per_layer[i].data, &mut b_host)?;
         println!(
             "weights of layer {} (before optimisations): [{}, {}, {}, ..., {}]",
             i,
@@ -328,6 +330,14 @@ mod tests {
             a_host[1],
             a_host[2],
             a_host[a_host.len() - 1]
+        );
+        println!(
+            "biases of layer {} (before optimisations): [{}, {}, {}, ..., {}]",
+            i,
+            b_host[0],
+            b_host[1],
+            b_host[2],
+            b_host[b_host.len() - 1]
         );
 
         network.forwardpass()?;
@@ -359,7 +369,7 @@ mod tests {
             .stream
             .memcpy_dtoh(&network.weights_gradients_per_layer[i].data, &mut a_host)?;
         println!(
-            "weights gradients of layer {} (after backpropagation): [{}, {}, {}, ..., {}]",
+            "gradients of weights of layer {} (after backpropagation): [{}, {}, {}, ..., {}]",
             i,
             a_host[0],
             a_host[1],
@@ -367,7 +377,12 @@ mod tests {
             a_host[a_host.len() - 1]
         );
 
-        gradientdescent(&mut network, &mut optimiser_parameters)?;
+        let optimiser_1 = Optimiser::GradientDescent;
+        let optimiser_2 = Optimiser::Adam;
+        let optimiser_3 = Optimiser::AdamMax;
+
+        // gradientdescent(&mut network, &mut optimiser_parameters)?;
+        optimiser_1.optimise(&mut network, &mut optimiser_parameters)?;
         // println!("network (after gradientdescent): {}", network);
         // println!("optimiser_parameters (after gradientdescent): {}", optimiser_parameters);
         network
@@ -381,13 +396,36 @@ mod tests {
             a_host[2],
             a_host[a_host.len() - 1]
         );
+        network
+            .stream
+            .memcpy_dtoh(&network.biases_per_layer[i].data, &mut b_host)?;
+        println!(
+            "biases of layer {} (after gradientdescent): [{}, {}, {}, ..., {}]",
+            i,
+            b_host[0],
+            b_host[1],
+            b_host[2],
+            b_host[b_host.len() - 1]
+        );
+
+        // Test Adam optimiser
+        let mut network: Network = Network::new(
+            stream.clone(),
+            input_matrix.clone(),
+            output_matrix.clone(),
+            10,
+            vec![256; 10],
+            vec![0.0f32; 10],
+            42,
+        )?;
 
         network.forwardpass()?;
         // println!("network (after forwardpass): {}", network);
         network.backpropagation()?;
         // println!("network (after backpropagation): {}", network);
 
-        adam(&mut network, &mut optimiser_parameters)?;
+        // adam(&mut network, &mut optimiser_parameters)?;
+        optimiser_2.optimise(&mut network, &mut optimiser_parameters)?;
         // println!("network (after adam): {}", network);
         // println!("optimiser_parameters (after adam): {}", optimiser_parameters);
         network
@@ -400,6 +438,60 @@ mod tests {
             a_host[1],
             a_host[2],
             a_host[a_host.len() - 1]
+        );
+        network
+            .stream
+            .memcpy_dtoh(&network.biases_per_layer[i].data, &mut b_host)?;
+        println!(
+            "biases of layer {} (after adam): [{}, {}, {}, ..., {}]",
+            i,
+            b_host[0],
+            b_host[1],
+            b_host[2],
+            b_host[b_host.len() - 1]
+        );
+
+        // Test AdamMax optimiser
+        let mut network: Network = Network::new(
+            stream.clone(),
+            input_matrix.clone(),
+            output_matrix.clone(),
+            10,
+            vec![256; 10],
+            vec![0.0f32; 10],
+            42,
+        )?;
+
+        network.forwardpass()?;
+        // println!("network (after forwardpass): {}", network);
+        network.backpropagation()?;
+        // println!("network (after backpropagation): {}", network);
+
+        // adammax(&mut network, &mut optimiser_parameters)?;
+        optimiser_3.optimise(&mut network, &mut optimiser_parameters)?;
+        // println!("network (after adammax): {}", network);
+        // println!("optimiser_parameters (after adammax): {}", optimiser_parameters);
+        network
+            .stream
+            .memcpy_dtoh(&network.weights_per_layer[i].data, &mut a_host)?;
+        println!(
+            "weights of layer {} (after adammax): [{}, {}, {}, ..., {}]",
+            i,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+        network
+            .stream
+            .memcpy_dtoh(&network.biases_per_layer[i].data, &mut b_host)?;
+        println!(
+            "biases of layer {} (after adammax): [{}, {}, {}, ..., {}]",
+            i,
+            b_host[0],
+            b_host[1],
+            b_host[2],
+            b_host[b_host.len() - 1]
         );
 
         Ok(())
