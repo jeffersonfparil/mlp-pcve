@@ -7,6 +7,7 @@ mod forward;
 mod linalg;
 mod network;
 mod optimisers;
+mod train;
 
 fn main() -> Result<(), DriverError> {
     Ok(())

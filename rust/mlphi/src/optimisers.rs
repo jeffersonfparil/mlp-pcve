@@ -377,6 +377,7 @@ mod tests {
             a_host[a_host.len() - 1]
         );
 
+        // Define the optimisers
         let optimiser_1 = Optimiser::GradientDescent;
         let optimiser_2 = Optimiser::Adam;
         let optimiser_3 = Optimiser::AdamMax;
