@@ -104,10 +104,21 @@ pub fn gradientdescent(
     optimiser_parameters: &mut OptimiserParameters,
 ) -> Result<(), Box<dyn Error>> {
     for i in 0..(network.n_hidden_layers + 1) {
-        network.weights_per_layer[i] = network.weights_gradients_per_layer[i]
-            .scalarmatmul(optimiser_parameters.learning_rate)?;
-        network.biases_per_layer[i] = network.biases_gradients_per_layer[i]
-            .scalarmatmul(optimiser_parameters.learning_rate)?;
+        network.weights_per_layer[i] = network.weights_per_layer[i].
+            elementwisematadd(
+                &network.weights_gradients_per_layer[i]
+                    .scalarmatmul(optimiser_parameters.learning_rate)?
+                    .scalarmatmul(-1.0)?,
+            )?;
+        network.biases_per_layer[i] = network.biases_per_layer[i]
+            .elementwisematadd(
+                &network.biases_gradients_per_layer[i]
+                    .scalarmatmul(optimiser_parameters.learning_rate)?
+                    .scalarmatmul(-1.0)?,
+            )?;
+
+            // TODO: Clip weights and biases to prevent exploding gradients...
+
     }
     Ok(())
 }
