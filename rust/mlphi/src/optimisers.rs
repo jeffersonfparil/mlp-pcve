@@ -6,15 +6,15 @@ use std::fmt;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct OptimiserParameters {
-    learning_rate: f32,       // η = 0.001
-    first_moment_decay: f32,  // β₁ = 0.900
-    second_moment_decay: f32, // β₁ = 0.999
-    epsilon: f32,             // ϵ = 1e-8 for numerical stability
-    time_step: usize,         // t = 0
-    first_moments_of_weights_per_layer: Vec<Matrix>,
-    second_moments_of_weights_per_layer: Vec<Matrix>,
-    first_moments_of_biases_per_layer: Vec<Matrix>,
-    second_moments_of_biases_per_layer: Vec<Matrix>,
+    pub learning_rate: f32,       // η = 0.001
+    pub first_moment_decay: f32,  // β₁ = 0.900
+    pub second_moment_decay: f32, // β₁ = 0.999
+    pub epsilon: f32,             // ϵ = 1e-8 for numerical stability
+    pub time_step: usize,         // t = 0
+    pub first_moments_of_weights_per_layer: Vec<Matrix>,
+    pub second_moments_of_weights_per_layer: Vec<Matrix>,
+    pub first_moments_of_biases_per_layer: Vec<Matrix>,
+    pub second_moments_of_biases_per_layer: Vec<Matrix>,
 }
 
 impl fmt::Display for OptimiserParameters {

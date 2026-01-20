@@ -8,9 +8,9 @@ use std::error::Error;
 impl Network {
     pub fn forwardpass(&mut self) -> Result<(), Box<dyn Error>> {
         // Updates:
-        //  1. weights_x_biases_per_layer,
-        //  2. activations_per_layer, and
-        // //  3. predictions.
+        //  1. weights_x_biases_per_layer, and
+        //  2. activations_per_layer. Predictions are not updated here as they are only
+        //     updated in the predict() method (no dropout there).
         let mut rng = ChaCha12Rng::seed_from_u64(self.seed as u64);
         for i in 0..self.n_hidden_layers {
             let n_nodes = self.n_hidden_nodes[i];
@@ -29,52 +29,12 @@ impl Network {
             } else {
                 self.weights_per_layer[i].matmul(&self.activations_per_layer[i])?
             };
-            // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_rows == self.weights_x_biases_per_layer[i].n_rows);
-            // assert!((rowmatadd(&weights_x_dropout, &self.biases_per_layer[i])?).n_cols == self.weights_x_biases_per_layer[i].n_cols);
             self.weights_x_biases_per_layer[i] =
                 weights_x_dropout.rowmatadd(&self.biases_per_layer[i])?;
-            // assert!(self.weights_x_biases_per_layer[i].n_rows == self.activations_per_layer[i + 1].n_rows);
-            // assert!(self.weights_x_biases_per_layer[i].n_cols == self.activations_per_layer[i + 1].n_cols);
             self.activations_per_layer[i + 1] = self
                 .activation
                 .activate(&self.weights_x_biases_per_layer[i])?;
-
-            // let mut a_host =
-            //     vec![0.0f32; self.activations_per_layer[i].n_rows * self.activations_per_layer[i].n_cols];
-            // self
-            //     .stream
-            //     .memcpy_dtoh(&self.activations_per_layer[i].data, &mut a_host)?;
-            // println!(
-            //     "??????? layer {}: [{}, {}, {}, ..., {}]",
-            //     i,
-            //     a_host[0],
-            //     a_host[1],
-            //     a_host[2],
-            //     a_host[a_host.len() - 1]
-            // );
         }
-        // let n = self.n_hidden_layers;
-        // let weights_x_dropout = self.weights_per_layer[n].matmul(&self.activations_per_layer[n])?;
-
-        // // let mut a_host =
-        // //     vec![0.0f32; self.activations_per_layer[n].n_rows * self.activations_per_layer[n].n_cols];
-        // // self
-        // //     .stream
-        // //     .memcpy_dtoh(&self.activations_per_layer[n].data, &mut a_host)?;
-        // // println!(
-        // //     "???????: [{}, {}, {}, ..., {}]",
-        // //     a_host[0],
-        // //     a_host[1],
-        // //     a_host[2],
-        // //     a_host[a_host.len() - 1]
-        // // );
-
-        // self.weights_x_biases_per_layer[n] =
-        //     weights_x_dropout.rowmatadd(&self.biases_per_layer[n])?;
-        // // assert!(self.predictions.n_rows == self.weights_x_biases_per_layer[n].n_rows);
-        // // assert!(self.predictions.n_cols == self.weights_x_biases_per_layer[n].n_cols);
-        // self.predictions = self.weights_x_biases_per_layer[n].clone(); // predictions should have no dropout, see: train.rs Network method: predict(..)
-
         Ok(())
     }
 }

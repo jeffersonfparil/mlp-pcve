@@ -29,6 +29,175 @@ pub struct Network {
     pub seed: usize,                             // random seed for dropouts
 }
 
+pub fn printcost(network: &Network) -> Result<(), Box<dyn Error>> {
+    let mse = network
+        .cost
+        .cost(&network.predictions, &network.targets)?
+        .summat(&network.stream)? / (network.targets.n_cols as f32);
+    println!("{:?} = {}", network.cost, mse);
+    Ok(())
+}
+pub fn printpredictions(network: &Network) -> Result<(), Box<dyn Error>> {
+    let n = network.predictions.n_rows * network.predictions.n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "predictions (n={}): [{}, ..., {}]",
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "predictions (n={}): [{}, {}, {}, ..., {}]",
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+pub fn printactivations(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
+    let n = network.activations_per_layer[layer].n_rows * network.activations_per_layer[layer].n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.activations_per_layer[layer].data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "activations (layer={}; n={}): [{}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "activations (layer={}; n={}): [{}, {}, {}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+pub fn printweights(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
+    let n = network.weights_per_layer[layer].n_rows * network.weights_per_layer[layer].n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.weights_per_layer[layer].data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "weights (layer={}; n={}): [{}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "weights (layer={}; n={}): [{}, {}, {}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+pub fn printbiases(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
+    let n = network.biases_per_layer[layer].n_rows * network.biases_per_layer[layer].n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.biases_per_layer[layer].data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "biases (layer={}; n={}): [{}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "biases (layer={}; n={}): [{}, {}, {}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+pub fn printweightsgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
+    let n = network.weights_gradients_per_layer[layer].n_rows * network.weights_gradients_per_layer[layer].n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.weights_gradients_per_layer[layer].data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "weights gradients (layer={}; n={}): [{}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "weights gradients (layer={}; n={}): [{}, {}, {}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+pub fn printbiasesgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
+    let n = network.biases_gradients_per_layer[layer].n_rows * network.biases_gradients_per_layer[layer].n_cols;
+    let mut a_host = vec![0.0f32; n];
+    network
+        .stream
+        .memcpy_dtoh(&network.biases_gradients_per_layer[layer].data, &mut a_host)?;
+    if n < 4 {
+        println!(
+            "biases gradients (layer={}; n={}): [{}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[a_host.len() - 1]
+        );
+    } else {
+        println!(
+            "biases gradients (layer={}; n={}): [{}, {}, {}, ..., {}]",
+            layer,
+            n,
+            a_host[0],
+            a_host[1],
+            a_host[2],
+            a_host[a_host.len() - 1]
+        );
+    }
+    Ok(())
+}
+
 impl fmt::Display for Network {
     // fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), Box<dyn Error>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -43,32 +212,32 @@ impl fmt::Display for Network {
             predictions = {}
             activation = {:?}
             cost = {:?}
-            weights_per_layer = [
+            weights_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
             ]
-            biases_per_layer = [
+            biases_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
             ]
-            weights_x_biases_per_layer = [
+            weights_x_biases_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
             ]
-            activations_per_layer = [
+            activations_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
             ]
-            weights_gradients_per_layer = [
+            weights_gradients_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
             ]
-            biases_gradients_per_layer = [
+            biases_gradients_per_layer (len={}) = [
                 {} (sum={}), 
                 ..., 
                 {} (sum={})
@@ -84,6 +253,7 @@ impl fmt::Display for Network {
             self.predictions,
             self.activation,
             self.cost,
+            self.weights_per_layer.len(),
             self.weights_per_layer[0],
             match self.weights_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -94,6 +264,7 @@ impl fmt::Display for Network {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
+            self.biases_per_layer.len(),
             self.biases_per_layer[0],
             match self.biases_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -104,6 +275,7 @@ impl fmt::Display for Network {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
+            self.weights_x_biases_per_layer.len(),
             self.weights_x_biases_per_layer[0],
             match self.weights_x_biases_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -116,6 +288,7 @@ impl fmt::Display for Network {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
+            self.activations_per_layer.len(),
             self.activations_per_layer[0],
             match self.activations_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -128,6 +301,7 @@ impl fmt::Display for Network {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
+            self.weights_gradients_per_layer.len(),
             self.weights_gradients_per_layer[0],
             match self.weights_gradients_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -140,6 +314,7 @@ impl fmt::Display for Network {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
+            self.biases_gradients_per_layer.len(),
             self.biases_gradients_per_layer[0],
             match self.biases_gradients_per_layer[0].summat(&self.stream) {
                 Ok(x) => x,
@@ -216,7 +391,7 @@ impl Network {
             tmp
         };
         let mut rng = ChaCha12Rng::seed_from_u64(seed as u64);
-        let normal = Normal::new(0.0, 0.1)?;
+        let normal = Normal::new(0.0, 1.0)?;
         let predictions_dev: CudaSlice<f32> = stream.clone_htod(&predictions_host)?;
         let predictions: Matrix = Matrix::new(predictions_dev, n_output_nodes, n_observations)?;
         let mut weights_per_layer: Vec<Matrix> = vec![];
@@ -228,6 +403,7 @@ impl Network {
         for i in 0..(n_nodes.len() - 1) {
             let n: usize = n_nodes[i + 1];
             let p: usize = n_nodes[i];
+            // let normal = Normal::new(0.0, 2.0/(p as f32).sqrt())?;
             let weights_host: Vec<f32> = (&mut rng).sample_iter(normal).take(n * p).collect();
             let dweights_host: Vec<f32> = vec![0f32; n * p];
             let biases_host: Vec<f32> = vec![0f32; n * 1];

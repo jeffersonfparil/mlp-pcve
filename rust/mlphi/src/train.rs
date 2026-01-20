@@ -64,13 +64,16 @@ impl Network {
 mod tests {
     use super::*;
     use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
+    use crate::network::{printcost, printpredictions, printactivations, printweights, printbiases, printweightsgradients, printbiasesgradients};
     #[test]
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let n: usize = 10_001;
-        let p: usize = 123;
-        let k: usize = 1;
+        let n: usize = 123; // number of observations
+        let p: usize = 20; // number of input features
+        let k: usize = 1; // number of output features
+        let n_hidden_layers: usize = 2;
+        let n_hidden_layer_nodes: usize = 5;
         let mut input_host: Vec<f32> = vec![0.0f32; p * n]; // p x n
         let mut output_host: Vec<f32> = vec![0.0f32; k * n]; // k x n
         rand::fill(&mut input_host[..]);
@@ -81,20 +84,25 @@ mod tests {
         println!("input_matrix: {}", input_matrix);
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
-        let n_hidden_layers: usize = 2;
         let mut network: Network = Network::new(
             stream,
             input_matrix,
             output_matrix,
             n_hidden_layers,
-            vec![256; n_hidden_layers],
+            vec![n_hidden_layer_nodes; n_hidden_layers],
             vec![0.0f32; n_hidden_layers],
             42,
         )?;
+        println!("Network:\n{}\n\n", network);
         let mut optimiser_parameters = OptimiserParameters::new(&network)?;
+        // optimiser_parameters.learning_rate = 0.00001f32;
         let optimiser = Optimiser::GradientDescent;
         // let optimiser = Optimiser::Adam;
         // let optimiser = Optimiser::AdamMax;
+
+
+
+        // Tests
 
 
         let indexes: Vec<Vec<usize>> = network.shufflesplit(5)?;
@@ -134,42 +142,43 @@ mod tests {
             a_host[a_host.len() - 1]
         );
 
-        fn printpreds(network: &Network) -> Result<(), Box<dyn Error>> {
-            let mut a_host =
-                vec![0.0f32; network.predictions.n_rows * network.predictions.n_cols];
-            network
-                .stream
-                .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
-            println!(
-                "predictions: [{}, {}, {}, ..., {}]",
-                a_host[0],
-                a_host[1],
-                a_host[2],
-                a_host[a_host.len() - 1]
-            );
-            Ok(())
-        }
-        for epoch in 0..5 {
+        // fn printpreds(network: &Network) -> Result<(), Box<dyn Error>> {
+        //     let mut a_host =
+        //         vec![0.0f32; network.predictions.n_rows * network.predictions.n_cols];
+        //     network
+        //         .stream
+        //         .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
+        //     println!(
+        //         "predictions: [{}, {}, {}, ..., {}]",
+        //         a_host[0],
+        //         a_host[1],
+        //         a_host[2],
+        //         a_host[a_host.len() - 1]
+        //     );
+        //     Ok(())
+        // }
+
+        for epoch in 0..10 {
+            println!("\n=============================================");
             println!("Epoch {}", epoch + 1);
             network.forwardpass()?;
             network.backpropagation()?;
             optimiser.optimise(&mut network, &mut optimiser_parameters)?;
             network.predict()?;
-            printpreds(&network)?;
+            let layer: usize = 1;
+            println!("Optimiser: {:?}", optimiser);
+            printcost(&network)?;
+            printpredictions(&network)?;
+            printactivations(&network, layer)?;
+            printweights(&network, layer)?;
+            printbiases(&network, layer)?;
+            printweightsgradients(&network, layer)?;
+            printbiasesgradients(&network, layer)?;
+            println!("=============================================\n");
         }
 
-        // printpreds(&network)?;
-        // network
-        //     .stream
-        //     .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
-        // println!(
-        //     "predictions (after predict()): [{}, {}, {}, ..., {}]",
-        //     a_host[0],
-        //     a_host[1],
-        //     a_host[2],
-        //     a_host[a_host.len() - 1]
-        // );
         
+       
         
         Ok(())
     }

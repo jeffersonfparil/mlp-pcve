@@ -1,7 +1,11 @@
 use crate::linalg::matrix::Matrix;
-use crate::network::Network;
+use crate::network::{Network, printweightsgradients, printbiasesgradients};
 use cudarc::driver::{CudaContext, CudaSlice};
 use std::error::Error;
+
+// To prevent exploding gradients we clamp the gradients to a reasonable range:
+const CLAMP_LOWER: f32 = -10_000.0;
+const CLAMP_UPPER: f32 = 10_000.0;
 
 impl Network {
     pub fn backpropagation(&mut self) -> Result<(), Box<dyn Error>> {
@@ -9,20 +13,6 @@ impl Network {
         // Starting with the output layer down to the first hidden layer
         // Cost derivative with respect to (w.r.t.) to the activations at the output layer
         let dc_over_da = self.cost.derivative(&self.predictions, &self.targets)?;
-
-        // let mut a_host =
-        //     vec![0.0f32; self.predictions.n_rows * self.predictions.n_cols];
-        // self
-        //     .stream
-        //     .memcpy_dtoh(&self.predictions.data, &mut a_host)?;
-        // println!(
-        //     "self.predictions: [{}, {}, {}, ..., {}]",
-        //     a_host[0],
-        //     a_host[1],
-        //     a_host[2],
-        //     a_host[a_host.len() - 1]
-        // );
-
         // Activation derivative w.r.t. the sum of the weights (i.e. pre-activation values) at the output layer which is just 1.00 (linear activation) because this is a regression and not a classification network
         let da_over_ds = 1.00f32;
         // Error for the output layer (cost derivative w.r.t. the sum of the weights via chain rule): element-wise product of the cost derivatives and activation derivatives
@@ -50,15 +40,18 @@ impl Network {
         for i in 0..delta.len() {
             let j = delta.len() - (i + 1); // we start with the first hidden layer in Δ, i.e. we need to reverse Δ
             // Outer-product of the error in hidden layer 1 (l_1 x n) and the transpose of the activation at 1 layer below (n x l_0) to yield a gradient matrix corresponding to the weights matrix (l_1 x l_0)
-            let x = delta[j].matmul0t(&self.activations_per_layer[i])?;
-            // assert_eq!(self.weights_gradients_per_layer[i].n_rows, x.n_rows);
-            // assert_eq!(self.weights_gradients_per_layer[i].n_cols, x.n_cols);
-            self.weights_gradients_per_layer[i] = x;
+            self.weights_gradients_per_layer[i] = delta[j]
+                .matmul0t(&self.activations_per_layer[i])?
+                .clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
             // Sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
-            let y = delta[j].rowsummat(&self.stream)?;
-            // assert_eq!(self.biases_gradients_per_layer[i].n_rows, y.n_rows);
-            // assert_eq!(self.biases_gradients_per_layer[i].n_cols, y.n_cols);
-            self.biases_gradients_per_layer[i] = y;
+            self.biases_gradients_per_layer[i] = delta[j]
+                .rowsummat(&self.stream)?
+                .clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
+            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@ i={} @@@@@@@@@@@@@@@@@@@@@@@@@@@", i);
+            printweightsgradients(self, i)?;
+            printbiasesgradients(self, i)?;
+            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
         }
         Ok(())
     }
