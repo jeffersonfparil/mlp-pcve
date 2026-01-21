@@ -65,6 +65,7 @@ mod tests {
     use super::*;
     use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
     use crate::network::{printcost, printpredictions, printactivations, printweights, printbiases, printweightsgradients, printbiasesgradients};
+    use ruviz::prelude::*;
     #[test]
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
@@ -158,6 +159,8 @@ mod tests {
         //     Ok(())
         // }
 
+        let mut epochs: Vec<f64> = Vec::new();
+        let mut costs: Vec<f64> = Vec::new();
         for epoch in 0..10 {
             println!("\n=============================================");
             println!("Epoch {}", epoch + 1);
@@ -174,8 +177,22 @@ mod tests {
             printbiases(&network, layer)?;
             printweightsgradients(&network, layer)?;
             printbiasesgradients(&network, layer)?;
+            let e: f64 = epoch as f64;
+            let c: f64 = (
+                    network
+                        .cost
+                        .cost(&network.predictions, &network.targets)?
+                        .summat(&network.stream)? as f64
+                ) /
+                (network.targets.n_cols as f64);
+            epochs.push(e);
+            costs.push(c);
             println!("=============================================\n");
         }
+        // Plot::new()
+        //     .line(&epochs, &costs)
+        //     .title("Training Cost over Epochs")
+        //     .save("test.png")?;
 
         
        

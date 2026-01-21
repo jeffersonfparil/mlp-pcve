@@ -30,11 +30,11 @@ pub struct Network {
 }
 
 pub fn printcost(network: &Network) -> Result<(), Box<dyn Error>> {
-    let mse = network
+    let c = network
         .cost
         .cost(&network.predictions, &network.targets)?
         .summat(&network.stream)? / (network.targets.n_cols as f32);
-    println!("{:?} = {}", network.cost, mse);
+    println!("{:?} = {}", network.cost, c);
     Ok(())
 }
 pub fn printpredictions(network: &Network) -> Result<(), Box<dyn Error>> {
