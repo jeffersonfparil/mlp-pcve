@@ -1,9 +1,23 @@
-use crate::linalg::matrix::Matrix;
+use crate::linalg::matrix::{Matrix, MatrixError};
 use crate::network::Network;
 use crate::optimisers::{Optimiser, OptimiserParameters};
 use std::error::Error;
 use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
+
+// use ruviz::prelude::*;
+use ruviz::core::{Plot, PlottingError};
+impl From<PlottingError> for MatrixError {
+    fn from(err: PlottingError) -> Self {
+        MatrixError::CompileError(err.to_string())
+    }
+}
+// impl Error for PlottingError {}
+// impl From<Box<dyn Error>> for PlottingError {
+// fn from(err: Box<dyn Error>) -> PlottingError {
+//         PlottingError::CompileError(err.to_string())
+//     }
+// }
 
 impl Network {
     pub fn shufflesplit(self: &Self, n_batches: usize) -> Result<Vec<Vec<usize>>, Box<dyn Error>> {
@@ -65,13 +79,13 @@ mod tests {
     use super::*;
     use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
     use crate::network::{printcost, printpredictions, printactivations, printweights, printbiases, printweightsgradients, printbiasesgradients};
-    use ruviz::prelude::*;
+    
     #[test]
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let n: usize = 123; // number of observations
-        let p: usize = 20; // number of input features
+        let n: usize = 10_001; // number of observations
+        let p: usize = 200; // number of input features
         let k: usize = 1; // number of output features
         let n_hidden_layers: usize = 2;
         let n_hidden_layer_nodes: usize = 5;
@@ -159,9 +173,10 @@ mod tests {
         //     Ok(())
         // }
 
+        let n_epochs: usize = 50;
         let mut epochs: Vec<f64> = Vec::new();
         let mut costs: Vec<f64> = Vec::new();
-        for epoch in 0..10 {
+        for epoch in 0..n_epochs {
             println!("\n=============================================");
             println!("Epoch {}", epoch + 1);
             network.forwardpass()?;
@@ -189,10 +204,14 @@ mod tests {
             costs.push(c);
             println!("=============================================\n");
         }
-        // Plot::new()
-        //     .line(&epochs, &costs)
-        //     .title("Training Cost over Epochs")
-        //     .save("test.png")?;
+        let mut ylabel = String::from("Cost");
+        ylabel.push_str(&format!(" ({:?}; {:?})", network.cost, optimiser));
+        Plot::new()
+            .line(&epochs, &costs)
+            .title("Training Cost over Epochs")
+            .xlabel("Epochs")
+            .ylabel(&ylabel)
+            .save("test.png")?;
 
         
        
