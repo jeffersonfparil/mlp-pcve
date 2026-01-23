@@ -47,11 +47,6 @@ impl Network {
             self.biases_gradients_per_layer[i] = delta[j]
                 .rowsummat(&self.stream)?
                 .clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
-            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@ i={} @@@@@@@@@@@@@@@@@@@@@@@@@@@", i);
-            printweightsgradients(self, i)?;
-            printbiasesgradients(self, i)?;
-            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-
         }
         Ok(())
     }

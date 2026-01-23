@@ -56,6 +56,7 @@ pub enum MatrixError {
     OutOfBounds(String),
     OutOfMemory(String),
     CompileError(String),
+    OtherError(String),
 }
 
 /// Implement Error for MatrixError
@@ -70,6 +71,7 @@ impl fmt::Display for MatrixError {
             MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds: {}", msg),
             MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
             MatrixError::CompileError(msg) => write!(f, "Compiler Error: {}", msg),
+            MatrixError::OtherError(msg) => write!(f, "Other Error: {}", msg),
         }
     }
 }

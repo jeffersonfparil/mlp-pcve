@@ -1,6 +1,6 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
 use crate::network::Network;
-use crate::optimisers::{Optimiser, OptimiserParameters};
+use crate::optimisers::{Optimiser, OptimisationParameters};
 use std::error::Error;
 use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
@@ -12,15 +12,14 @@ impl From<PlottingError> for MatrixError {
         MatrixError::CompileError(err.to_string())
     }
 }
-// impl Error for PlottingError {}
-// impl From<Box<dyn Error>> for PlottingError {
-// fn from(err: Box<dyn Error>) -> PlottingError {
-//         PlottingError::CompileError(err.to_string())
-//     }
-// }
 
 impl Network {
     pub fn shufflesplit(self: &Self, n_batches: usize) -> Result<Vec<Vec<usize>>, Box<dyn Error>> {
+        if n_batches == 0 {
+            return Err(Box::new(MatrixError::OtherError(
+                "Number of batches must be greater than zero.".to_string(),
+            )));
+        }
         let n: usize = self.targets.n_cols;
         // let k: usize = self.targets.n_rows;
         let mut rng = ChaCha12Rng::seed_from_u64(self.seed as u64);
@@ -57,16 +56,15 @@ impl Network {
         self.weights_x_biases_per_layer[n] =
             weights_x_dropout.rowmatadd(&self.biases_per_layer[n])?;
         self.predictions = self.weights_x_biases_per_layer[n].clone();
-
-        // TODO: prevent overflows in the output layer as we are getting infinities and NaNs!
-        // Note: values blowing here likely due to the optimisers, i.e. GradientDescent and AdamMax
-        // producing too large updates to weights and biases. Go check those out!!!
-
         Ok(())
     }
 
-
-    pub fn train(self: &Self) -> Result<(), Box<dyn Error>> {
+    pub fn train(self: &mut Self, optimiser: &Optimiser, optimisation_parameters: &mut OptimisationParameters) -> Result<(), Box<dyn Error>> {
+        let batches: Vec<Vec<usize>> = self.shufflesplit(optimisation_parameters.n_batches)?;
+        for t in 0..optimisation_parameters.n_epochs {
+            println!("\n=== Epoch {} ===", t + 1);
+            // self.train_epoch(optimiser, optimisation_parameters)?;
+        }
         Ok(())
     } 
     pub fn optim(self: &Self) -> Result<(), Box<dyn Error>> {
@@ -109,11 +107,11 @@ mod tests {
             42,
         )?;
         println!("Network:\n{}\n\n", network);
-        let mut optimiser_parameters = OptimiserParameters::new(&network)?;
-        // optimiser_parameters.learning_rate = 0.00001f32;
-        let optimiser = Optimiser::GradientDescent;
-        // let optimiser = Optimiser::Adam;
-        // let optimiser = Optimiser::AdamMax;
+        let mut optimisation_parameters = OptimisationParameters::new(&network)?;
+        // optimisation_parameters.learning_rate = 0.00001f32;
+        // optimisation_parameters.optimiser = Optimiser::GradientDescent;
+        optimisation_parameters.optimiser = Optimiser::Adam;
+        // optimisation_parameters.optimiser = Optimiser::AdamMax;
 
 
 
@@ -173,18 +171,17 @@ mod tests {
         //     Ok(())
         // }
 
-        let n_epochs: usize = 50;
         let mut epochs: Vec<f64> = Vec::new();
         let mut costs: Vec<f64> = Vec::new();
-        for epoch in 0..n_epochs {
+        for epoch in 0..optimisation_parameters.n_epochs {
             println!("\n=============================================");
             println!("Epoch {}", epoch + 1);
             network.forwardpass()?;
             network.backpropagation()?;
-            optimiser.optimise(&mut network, &mut optimiser_parameters)?;
+            network.optimise(&mut optimisation_parameters)?;
             network.predict()?;
             let layer: usize = 1;
-            println!("Optimiser: {:?}", optimiser);
+            println!("Optimiser: {:?}", optimisation_parameters.optimiser);
             printcost(&network)?;
             printpredictions(&network)?;
             printactivations(&network, layer)?;
@@ -205,7 +202,7 @@ mod tests {
             println!("=============================================\n");
         }
         let mut ylabel = String::from("Cost");
-        ylabel.push_str(&format!(" ({:?}; {:?})", network.cost, optimiser));
+        ylabel.push_str(&format!(" ({:?}; {:?})", network.cost, optimisation_parameters.optimiser));
         Plot::new()
             .line(&epochs, &costs)
             .title("Training Cost over Epochs")
