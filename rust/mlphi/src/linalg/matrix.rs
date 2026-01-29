@@ -33,6 +33,25 @@ impl Matrix {
         };
         Ok(out)
     }
+    pub fn slice(
+        self: &Self,
+        row_indexes: &Vec<usize>,
+        col_indexes: &Vec<usize>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let n_rows = row_indexes.len();
+        let n_cols = col_indexes.len();
+        let mut destination: Vec<f32> = vec![0.0; n_rows * n_cols];
+        let stream = self.data.context().default_stream();
+        let mut source: Vec<f32> = vec![0.0; self.n_rows * self.n_cols];
+        stream.memcpy_dtoh(&self.data, &mut source)?;
+        for (i, &row_idx) in row_indexes.iter().enumerate() {
+            for (j, &col_idx) in col_indexes.iter().enumerate() {
+                destination[i * n_cols + j] = source[row_idx * self.n_cols + col_idx];
+            }
+        }
+        let data_dev: CudaSlice<f32> = stream.clone_htod(&destination)?;
+        Ok(Matrix::new(data_dev, n_rows, n_cols)?)
+    }
 }
 
 impl fmt::Display for Matrix {
@@ -107,6 +126,17 @@ mod tests {
         let mut b_host: Vec<f32> = a_host.clone();
         stream.memcpy_dtoh(&a_matrix.data, &mut b_host)?;
         println!("b_host {:?}", b_host);
+
+        assert_eq!(a_host, b_host);
+
+        let row_indexes: Vec<usize> = vec![0];
+        let col_indexes: Vec<usize> = vec![1, 2];
+        let b_matrix = a_matrix.slice(&row_indexes, &col_indexes)?;
+        let mut c_host: Vec<f32> = vec![0.0; b_matrix.n_rows * b_matrix.n_cols];
+        stream.memcpy_dtoh(&b_matrix.data, &mut c_host)?;
+        println!("c_host {:?}", c_host);
+
+        assert_eq!(c_host, vec![a_host[1], a_host[2]]);
 
         MatrixError::DimensionMismatch("Test error".to_string());
         MatrixError::TypeMismatch("Test error".to_string());

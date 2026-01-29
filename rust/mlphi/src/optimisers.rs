@@ -74,21 +74,18 @@ pub fn gradientdescent(
     optimiser_parameters: &mut OptimisationParameters,
 ) -> Result<(), Box<dyn Error>> {
     for i in 0..(network.n_hidden_layers + 1) {
-        network.weights_per_layer[i] = network.weights_per_layer[i].
-            elementwisematadd(
-                &network.weights_gradients_per_layer[i]
-                    .scalarmatmul(optimiser_parameters.learning_rate)?
-                    .scalarmatmul(-1.0)?,
-            )?;
-        network.biases_per_layer[i] = network.biases_per_layer[i]
-            .elementwisematadd(
-                &network.biases_gradients_per_layer[i]
-                    .scalarmatmul(optimiser_parameters.learning_rate)?
-                    .scalarmatmul(-1.0)?,
-            )?;
+        network.weights_per_layer[i] = network.weights_per_layer[i].elementwisematadd(
+            &network.weights_gradients_per_layer[i]
+                .scalarmatmul(optimiser_parameters.learning_rate)?
+                .scalarmatmul(-1.0)?,
+        )?;
+        network.biases_per_layer[i] = network.biases_per_layer[i].elementwisematadd(
+            &network.biases_gradients_per_layer[i]
+                .scalarmatmul(optimiser_parameters.learning_rate)?
+                .scalarmatmul(-1.0)?,
+        )?;
 
-            // TODO: Clip weights and biases to prevent exploding gradients...
-
+        // TODO: Clip weights and biases to prevent exploding gradients...
     }
     Ok(())
 }
@@ -322,7 +319,7 @@ mod tests {
         println!("input_matrix: {}", input_matrix);
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
-        let mut network: Network = Network::new(
+        let network: Network = Network::new(
             stream.clone(),
             input_matrix.clone(),
             output_matrix.clone(),
@@ -332,7 +329,7 @@ mod tests {
             42,
         )?;
         println!("network (init): {}", network);
-        let mut optimiser_parameters = OptimisationParameters::new(&network)?;
+        let optimiser_parameters = OptimisationParameters::new(&network)?;
         println!("optimiser_parameters: {}", optimiser_parameters);
         let layer: usize = 1;
         // Optimise using GradientDescent

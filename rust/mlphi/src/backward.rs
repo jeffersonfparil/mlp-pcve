@@ -1,6 +1,6 @@
 use crate::linalg::matrix::Matrix;
-use crate::network::{Network, printweightsgradients, printbiasesgradients};
-use cudarc::driver::{CudaContext, CudaSlice};
+use crate::network::Network;
+use cudarc::driver::CudaSlice;
 use std::error::Error;
 
 // To prevent exploding gradients we clamp the gradients to a reasonable range:
@@ -55,6 +55,7 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cudarc::driver::CudaContext;
     #[test]
     fn test_backward() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;

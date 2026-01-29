@@ -33,7 +33,8 @@ pub fn printcost(network: &Network) -> Result<(), Box<dyn Error>> {
     let c = network
         .cost
         .cost(&network.predictions, &network.targets)?
-        .summat(&network.stream)? / (network.targets.n_cols as f32);
+        .summat(&network.stream)?
+        / (network.targets.n_cols as f32);
     println!("{:?} = {}", network.cost, c);
     Ok(())
 }
@@ -63,7 +64,8 @@ pub fn printpredictions(network: &Network) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 pub fn printactivations(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.activations_per_layer[layer].n_rows * network.activations_per_layer[layer].n_cols;
+    let n =
+        network.activations_per_layer[layer].n_rows * network.activations_per_layer[layer].n_cols;
     let mut a_host = vec![0.0f32; n];
     network
         .stream
@@ -144,11 +146,13 @@ pub fn printbiases(network: &Network, layer: usize) -> Result<(), Box<dyn Error>
     Ok(())
 }
 pub fn printweightsgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.weights_gradients_per_layer[layer].n_rows * network.weights_gradients_per_layer[layer].n_cols;
+    let n = network.weights_gradients_per_layer[layer].n_rows
+        * network.weights_gradients_per_layer[layer].n_cols;
     let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.weights_gradients_per_layer[layer].data, &mut a_host)?;
+    network.stream.memcpy_dtoh(
+        &network.weights_gradients_per_layer[layer].data,
+        &mut a_host,
+    )?;
     if n < 4 {
         println!(
             "weights gradients (layer={}; n={}): [{}, ..., {}]",
@@ -171,7 +175,8 @@ pub fn printweightsgradients(network: &Network, layer: usize) -> Result<(), Box<
     Ok(())
 }
 pub fn printbiasesgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.biases_gradients_per_layer[layer].n_rows * network.biases_gradients_per_layer[layer].n_cols;
+    let n = network.biases_gradients_per_layer[layer].n_rows
+        * network.biases_gradients_per_layer[layer].n_cols;
     let mut a_host = vec![0.0f32; n];
     network
         .stream
@@ -451,6 +456,26 @@ impl Network {
         };
         Ok(out)
     }
+
+    pub fn slice(
+        self: &Self,
+        col_indexes: &Vec<usize>, // indexes for observations
+    ) -> Result<Self, Box<dyn Error>> {
+        let input_row_indexes: Vec<usize> = (0..self.activations_per_layer[0].n_rows).collect();
+        let output_row_indexes: Vec<usize> = (0..self.targets.n_rows).collect();
+        let input_data = self.activations_per_layer[0].slice(&input_row_indexes, col_indexes)?;
+        let output_data = self.targets.slice(&output_row_indexes, col_indexes)?;
+        let network = Network::new(
+            self.stream.clone(),
+            input_data,
+            output_data,
+            self.n_hidden_layers,
+            self.n_hidden_nodes.clone(),
+            self.dropout_rates.clone(),
+            self.seed,
+        )?;
+        Ok(network)
+    }
 }
 
 #[cfg(test)]
@@ -482,14 +507,33 @@ mod tests {
             vec![0.0f32; 10],
             42,
         )?;
-        println!("network: {}", network);
+        println!("Network: {}", network);
         // Update activation and cost functions
         network.activation = activations::Activation::Sigmoid;
         network.cost = costs::Cost::MAE;
-        println!("network: {}", network);
+        println!("Updated Network: {}", network);
 
         assert_eq!(network.activation, activations::Activation::Sigmoid);
         assert_eq!(network.cost, costs::Cost::MAE);
+
+        let col_indexes: Vec<usize> = vec![0, 1, 2, 3, 4];
+        let sliced_network = network.slice(&col_indexes)?;
+        println!("Sliced Network: {}", sliced_network);
+
+        assert_eq!(
+            sliced_network.activations_per_layer[0].n_cols,
+            col_indexes.len()
+        );
+        assert_eq!(sliced_network.targets.n_cols, col_indexes.len());
+
+        let layer: usize = 1;
+        printcost(&network)?;
+        printpredictions(&network)?;
+        printactivations(&network, layer)?;
+        printweights(&network, layer)?;
+        printbiases(&network, layer)?;
+        printweightsgradients(&network, layer)?;
+        printbiasesgradients(&network, layer)?;
 
         Ok(())
     }
