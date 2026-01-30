@@ -52,11 +52,16 @@ impl Matrix {
         let data_dev: CudaSlice<f32> = stream.clone_htod(&destination)?;
         Ok(Matrix::new(data_dev, n_rows, n_cols)?)
     }
+    pub fn to_host(&self) -> Result<Vec<f32>, Box<dyn Error>> {
+        let mut vec_host: Vec<f32> = vec![0.0; self.n_rows * self.n_cols];
+        let stream = self.data.context().default_stream();
+        stream.memcpy_dtoh(&self.data, &mut vec_host)?;
+        Ok(vec_host)
+    }
 }
 
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let stream = self.data.context().default_stream();
         if self.n_rows == 0 || self.n_cols == 0 {
             write!(
                 f,
@@ -67,7 +72,6 @@ impl fmt::Display for Matrix {
                 self.data.num_bytes(),
             )
         } else if (self.n_rows >= 4) & (self.n_cols >= 4) {
-            let mut vec_host = vec![0.0f32; 4*4];
             let idx_rows: Vec<usize> = vec![0, 1, 2, self.n_rows - 1];
             let idx_cols: Vec<usize> = vec![0, 1, 2, self.n_cols - 1];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
@@ -76,13 +80,13 @@ impl fmt::Display for Matrix {
                     return write!(f, "Matrix data could not be sliced for display.")
                 }
             };
-            match stream.memcpy_dtoh(&for_printing.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match for_printing.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} {:.5} {:.5} ... {:.5} ⎤\n⎢ {:.5} {:.5} {:.5} ... {:.5} ⎥\n⎢ {:.5} {:.5} {:.5} ... {:.5} ⎥\n⎢ ....... ....... ....... ... ....... ⎥\n⎣ {:.5} {:.5} {:.5} ... {:.5} ⎦\n",
                 self.n_rows,
@@ -107,7 +111,6 @@ impl fmt::Display for Matrix {
                 vec_host[15],
             )
         } else if (self.n_rows >= 4) & (self.n_cols == 1) {
-            let mut vec_host = vec![0.0f32; 4*1];
             let idx_rows: Vec<usize> = vec![0, 1, 2, self.n_rows - 1];
             let idx_cols: Vec<usize> = vec![0];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
@@ -116,13 +119,13 @@ impl fmt::Display for Matrix {
                     return write!(f, "Matrix data could not be sliced for display.")
                 }
             };
-            match stream.memcpy_dtoh(&for_printing.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match for_printing.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} ⎤\n⎢ {:.5} ⎥\n⎢ {:.5} ⎥\n⎢ ....... ⎥\n⎣ {:.5} ⎦\n",
                 self.n_rows,
@@ -135,7 +138,6 @@ impl fmt::Display for Matrix {
                 vec_host[3],
             )
         } else if (self.n_rows == 1) & (self.n_cols >= 4) {
-            let mut vec_host = vec![0.0f32; 1*4];
             let idx_rows: Vec<usize> = vec![0];
             let idx_cols: Vec<usize> = vec![0, 1, 2, self.n_cols - 1];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
@@ -144,13 +146,13 @@ impl fmt::Display for Matrix {
                     return write!(f, "Matrix data could not be sliced for display.")
                 }
             };
-            match stream.memcpy_dtoh(&for_printing.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match for_printing.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n[ {:.5} {:.5} {:.5} ... {:.5} ]\n",
                 self.n_rows,
@@ -163,14 +165,13 @@ impl fmt::Display for Matrix {
                 vec_host[3],
             )
         } else if (self.n_rows == 3) & (self.n_cols == 3) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} {:.5} {:.5} ⎤\n⎢ {:.5} {:.5} {:.5} ⎥\n⎣ {:.5} {:.5} {:.5} ⎦\n",
                 self.n_rows,
@@ -188,14 +189,13 @@ impl fmt::Display for Matrix {
                 vec_host[8],
             )
         } else if (self.n_rows == 3) & (self.n_cols == 2) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} {:.5} ⎤\n⎢ {:.5} {:.5} ⎥\n⎣ {:.5} {:.5} ⎦\n",
                 self.n_rows,
@@ -210,14 +210,13 @@ impl fmt::Display for Matrix {
                 vec_host[5],
             )
         } else if (self.n_rows == 3) & (self.n_cols == 1) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} ⎤\n⎢ {:.5} ⎥\n⎣ {:.5} ⎦\n",
                 self.n_rows,
@@ -229,14 +228,13 @@ impl fmt::Display for Matrix {
                 vec_host[2],
             )
         } else if (self.n_rows == 2) & (self.n_cols == 3) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} {:.5} {:.5} ⎤\n⎣ {:.5} {:.5} {:.5} ⎦\n",
                 self.n_rows,
@@ -251,14 +249,13 @@ impl fmt::Display for Matrix {
                 vec_host[5],
             )
         } else if (self.n_rows == 1) & (self.n_cols == 3) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n[ {:.5} {:.5} {:.5} ]\n",
                 self.n_rows,
@@ -270,14 +267,13 @@ impl fmt::Display for Matrix {
                 vec_host[2],
             )
         } else if (self.n_rows == 2) & (self.n_cols == 2) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} {:.5} ⎤\n⎣ {:.5} {:.5} ⎦\n",
                 self.n_rows,
@@ -290,14 +286,13 @@ impl fmt::Display for Matrix {
                 vec_host[3],
             )
         } else if (self.n_rows == 2) & (self.n_cols == 1) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n⎡ {:.5} ⎤\n⎣ {:.5} ⎦\n",
                 self.n_rows,
@@ -308,14 +303,13 @@ impl fmt::Display for Matrix {
                 vec_host[1],
             )
         } else if (self.n_rows == 1) & (self.n_cols == 2) {
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n[ {:.5} {:.5} ]\n",
                 self.n_rows,
@@ -327,14 +321,13 @@ impl fmt::Display for Matrix {
             )
         } else {
             // 1 x 1 matrix
-            let mut vec_host = vec![0.0f32; self.n_rows*self.n_cols];
-            match stream.memcpy_dtoh(&self.data, &mut vec_host) {
-                Ok(_) => {}
+            let vec_host = match self.to_host() {
+                Ok(vec) => vec,
                 Err(_) => {
                     return write!(f, "Matrix data could not be copied to host for display.")
                 }
             };
-             write!(
+            write!(
                 f,
                 "Dimension: rows={}; cols={}; len={} length; bytes={}\n[ {:.5} ]\n",
                 self.n_rows,
@@ -455,6 +448,9 @@ mod tests {
         let col_indexes: Vec<usize> = (0..1).collect();
         let l_matrix = a_matrix.slice(&row_indexes, &col_indexes)?;
         println!("l_matrix\n{}", l_matrix);
+
+        let vec_host = a_matrix.to_host()?;
+        assert_eq!(a_host, vec_host);
         
         MatrixError::DimensionMismatch("Test error".to_string());
         MatrixError::TypeMismatch("Test error".to_string());

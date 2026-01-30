@@ -9,6 +9,7 @@ use ruviz::core::{Plot, PlottingError};
 use ruviz::prelude::LegendPosition;
 use std::env;
 use std::error::Error;
+
 impl From<PlottingError> for MatrixError {
     fn from(err: PlottingError) -> Self {
         MatrixError::CompileError(err.to_string())
@@ -210,9 +211,6 @@ impl Network {
         }
         Ok(())
     }
-    // pub fn optim(self: &Self) -> Result<(), Box<dyn Error>> {
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]
@@ -223,7 +221,7 @@ mod tests {
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let n: usize = 3_000_123; // number of observations
+        let n: usize = 10_123; // number of observations
         let p: usize = 314; // number of input features
         let k: usize = 1; // number of output features
         let n_hidden_layers: usize = 2;

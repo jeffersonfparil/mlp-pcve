@@ -4,6 +4,7 @@ mod activations;
 mod backward;
 mod costs;
 mod forward;
+mod io;
 mod linalg;
 mod network;
 mod optimisers;
