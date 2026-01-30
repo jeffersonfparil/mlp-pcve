@@ -176,6 +176,7 @@ pub fn adammax(
     network: &mut Network,
     optimiser_parameters: &mut OptimisationParameters,
 ) -> Result<(), Box<dyn Error>> {
+    let stream = network.targets.data.context().default_stream();
     optimiser_parameters.time_step += 1;
     let r_adj: f32 = optimiser_parameters.learning_rate
         / (1.00
@@ -195,7 +196,7 @@ pub fn adammax(
             .scalarmatmul(optimiser_parameters.second_moment_decay)?;
         let g2: Matrix = network.weights_gradients_per_layer[i].elementwisematabs()?;
         optimiser_parameters.second_moments_of_weights_per_layer[i] =
-            if g1.summat(&network.stream)? >= g2.summat(&network.stream)? {
+            if g1.summat(&stream)? >= g2.summat(&stream)? {
                 g1
             } else {
                 g2
@@ -222,7 +223,7 @@ pub fn adammax(
             .scalarmatmul(optimiser_parameters.second_moment_decay)?;
         let g2: Matrix = network.biases_gradients_per_layer[i].elementwisematabs()?;
         optimiser_parameters.second_moments_of_biases_per_layer[i] =
-            if g1.summat(&network.stream)? >= g2.summat(&network.stream)? {
+            if g1.summat(&stream)? >= g2.summat(&stream)? {
                 g1
             } else {
                 g2
@@ -243,6 +244,7 @@ pub fn adammax(
 
 impl OptimisationParameters {
     pub fn new(network: &Network) -> Result<Self, Box<dyn Error>> {
+        let stream = network.targets.data.context().default_stream();
         let mut first_moments_of_weights_per_layer: Vec<Matrix> = vec![];
         let mut second_moments_of_weights_per_layer: Vec<Matrix> = vec![];
         let mut first_moments_of_biases_per_layer: Vec<Matrix> = vec![];
@@ -251,7 +253,7 @@ impl OptimisationParameters {
             let n = network.weights_per_layer[i].n_rows;
             let p = network.weights_per_layer[i].n_cols;
             let weights_host = vec![0.0f32; n * p];
-            let weights_dev = network.stream.clone_htod(&weights_host)?;
+            let weights_dev = stream.clone_htod(&weights_host)?;
             let weights_matrix = Matrix::new(weights_dev, n, p)?;
             first_moments_of_weights_per_layer.push(weights_matrix.clone());
             second_moments_of_weights_per_layer.push(weights_matrix);
@@ -260,7 +262,7 @@ impl OptimisationParameters {
             let p = network.biases_per_layer[i].n_cols;
             assert!(p == 1);
             let biases_host = vec![0.0f32; n * p];
-            let biases_dev = network.stream.clone_htod(&biases_host)?;
+            let biases_dev = stream.clone_htod(&biases_host)?;
             let biases_matrix = Matrix::new(biases_dev, n, p)?;
             first_moments_of_biases_per_layer.push(biases_matrix.clone());
             second_moments_of_biases_per_layer.push(biases_matrix);
@@ -300,7 +302,6 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::printweights;
     use cudarc::driver::{CudaContext, CudaSlice};
     #[test]
     fn test_optimisers() -> Result<(), Box<dyn Error>> {
@@ -320,7 +321,7 @@ mod tests {
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
         let network: Network = Network::new(
-            stream.clone(),
+            &stream,
             input_matrix.clone(),
             output_matrix.clone(),
             10,
@@ -332,6 +333,7 @@ mod tests {
         let optimiser_parameters = OptimisationParameters::new(&network)?;
         println!("optimiser_parameters: {}", optimiser_parameters);
         let layer: usize = 1;
+        println!("Weights before optimisation:\n{}", network.weights_per_layer[layer]);
         // Optimise using GradientDescent
         let mut network_clone = network.clone();
         let mut optimiser_parameters_clone = optimiser_parameters.clone();
@@ -339,8 +341,8 @@ mod tests {
         network_clone.backpropagation()?;
         optimiser_parameters_clone.optimiser = Optimiser::GradientDescent;
         network_clone.optimise(&mut optimiser_parameters_clone)?;
-        println!("Weights after optimising with Optimiser::GradientDescent:");
-        printweights(&network_clone, layer)?;
+        println!("Weights after optimising with Optimiser::GradientDescent:\n{}", network_clone.weights_per_layer[layer]);
+        assert!(network.weights_per_layer[layer].summat(&stream)? != network_clone.weights_per_layer[layer].summat(&stream)?);
         // Optimise using Adam
         let mut network_clone = network.clone();
         let mut optimiser_parameters_clone = optimiser_parameters.clone();
@@ -348,8 +350,8 @@ mod tests {
         network_clone.forwardpass()?;
         network_clone.backpropagation()?;
         network_clone.optimise(&mut optimiser_parameters_clone)?;
-        println!("Weights after optimising with Optimiser::Adam:");
-        printweights(&network_clone, layer)?;
+        println!("Weights after optimising with Optimiser::Adam:\n{}", network_clone.weights_per_layer[layer]);
+        assert!(network.weights_per_layer[layer].summat(&stream)? != network_clone.weights_per_layer[layer].summat(&stream)?);
         // Optimise using AdamMax
         let mut network_clone = network.clone();
         let mut optimiser_parameters_clone = optimiser_parameters.clone();
@@ -357,8 +359,8 @@ mod tests {
         network_clone.forwardpass()?;
         network_clone.backpropagation()?;
         network_clone.optimise(&mut optimiser_parameters_clone)?;
-        println!("Weights after optimising with Optimiser::AdamMax:");
-        printweights(&network_clone, layer)?;
+        println!("Weights after optimising with Optimiser::AdamMax:\n{}", network_clone.weights_per_layer[layer]);
+        assert!(network.weights_per_layer[layer].summat(&stream)? != network_clone.weights_per_layer[layer].summat(&stream)?);
         Ok(())
     }
 }

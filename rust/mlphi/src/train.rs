@@ -81,7 +81,7 @@ impl Network {
             let c: f64 = (self
                 .cost
                 .cost(&self.predictions, &self.targets)?
-                .summat(&self.stream)? as f64)
+                .summat(&self.targets.data.context().default_stream())? as f64)
                 / (self.targets.n_cols as f64);
             epochs.push(e);
             costs.push(c);
@@ -99,6 +99,7 @@ impl Network {
                 "Number of batches must be greater than zero.".to_string(),
             )));
         }
+        let stream = self.targets.data.context().default_stream();
         let (epochs, costs): (Vec<Vec<f64>>, Vec<Vec<f64>>) = if optimisation_parameters.n_batches
             == 1
         {
@@ -138,9 +139,9 @@ impl Network {
                 let zeros_biases_host: Vec<f32> =
                     vec![0.0; self.biases_per_layer[i].n_rows * self.biases_per_layer[i].n_cols];
                 let zeros_weights_dev: CudaSlice<f32> =
-                    self.stream.clone_htod(&zeros_weights_host)?;
+                    stream.clone_htod(&zeros_weights_host)?;
                 let zeros_biases_dev: CudaSlice<f32> =
-                    self.stream.clone_htod(&zeros_biases_host)?;
+                    stream.clone_htod(&zeros_biases_host)?;
                 let mut summed_weights = Matrix::new(
                     zeros_weights_dev,
                     self.weights_per_layer[i].n_rows,
@@ -171,7 +172,7 @@ impl Network {
             // Assess cost after training
             let final_cost = self.cost.cost(&self.predictions, &self.targets)?;
             let final_cost_value =
-                final_cost.summat(&self.stream)? as f32 / self.targets.n_cols as f32;
+                final_cost.summat(&stream)? as f32 / self.targets.n_cols as f32;
             // Plot loss curve
             let dir: std::path::PathBuf = env::current_dir()?;
             let fname_svg = &format!(
@@ -222,8 +223,8 @@ mod tests {
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let n: usize = 1_123; // number of observations
-        let p: usize = 10; // number of input features
+        let n: usize = 3_000_123; // number of observations
+        let p: usize = 314; // number of input features
         let k: usize = 1; // number of output features
         let n_hidden_layers: usize = 2;
         let n_hidden_layer_nodes: usize = 5;
@@ -238,7 +239,7 @@ mod tests {
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
         let mut network: Network = Network::new(
-            stream,
+            &stream,
             input_matrix,
             output_matrix,
             n_hidden_layers,
@@ -274,11 +275,9 @@ mod tests {
         println!("Total length: {:?}", total_len);
         assert!(total_len == network.targets.n_cols);
 
+        let stream = network.targets.data.context().default_stream();
         let mut a_host = vec![0.0f32; network.targets.n_rows * network.targets.n_cols];
-
-        network
-            .stream
-            .memcpy_dtoh(&network.targets.data, &mut a_host)?;
+        stream.memcpy_dtoh(&network.targets.data, &mut a_host)?;
         println!(
             "targets: [{}, {}, {}, ..., {}]",
             a_host[0],
@@ -287,9 +286,7 @@ mod tests {
             a_host[a_host.len() - 1]
         );
 
-        network
-            .stream
-            .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
+        stream.memcpy_dtoh(&network.predictions.data, &mut a_host)?;
         println!(
             "predictions (before predict()): [{}, {}, {}, ..., {}]",
             a_host[0],

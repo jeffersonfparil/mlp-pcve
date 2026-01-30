@@ -12,7 +12,6 @@ use std::sync::Arc;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Network {
-    pub stream: Arc<CudaStream>,                  // CUDA device stream
     pub n_hidden_layers: usize,                   // number of hidden layers
     pub n_hidden_nodes: Vec<usize>,               // number of nodes per hidden layer (k)
     pub dropout_rates: Vec<f32>,                  // soft dropout rates per hidden layer (k)
@@ -29,183 +28,9 @@ pub struct Network {
     pub seed: usize,                             // random seed for dropouts
 }
 
-pub fn printcost(network: &Network) -> Result<(), Box<dyn Error>> {
-    let c = network
-        .cost
-        .cost(&network.predictions, &network.targets)?
-        .summat(&network.stream)?
-        / (network.targets.n_cols as f32);
-    println!("{:?} = {}", network.cost, c);
-    Ok(())
-}
-pub fn printpredictions(network: &Network) -> Result<(), Box<dyn Error>> {
-    let n = network.predictions.n_rows * network.predictions.n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.predictions.data, &mut a_host)?;
-    if n < 4 {
-        println!(
-            "predictions (n={}): [{}, ..., {}]",
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "predictions (n={}): [{}, {}, {}, ..., {}]",
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-pub fn printactivations(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n =
-        network.activations_per_layer[layer].n_rows * network.activations_per_layer[layer].n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.activations_per_layer[layer].data, &mut a_host)?;
-    if n < 4 {
-        println!(
-            "activations (layer={}; n={}): [{}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "activations (layer={}; n={}): [{}, {}, {}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-pub fn printweights(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.weights_per_layer[layer].n_rows * network.weights_per_layer[layer].n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.weights_per_layer[layer].data, &mut a_host)?;
-    if n < 4 {
-        println!(
-            "weights (layer={}; n={}): [{}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "weights (layer={}; n={}): [{}, {}, {}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-pub fn printbiases(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.biases_per_layer[layer].n_rows * network.biases_per_layer[layer].n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.biases_per_layer[layer].data, &mut a_host)?;
-    if n < 4 {
-        println!(
-            "biases (layer={}; n={}): [{}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "biases (layer={}; n={}): [{}, {}, {}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-pub fn printweightsgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.weights_gradients_per_layer[layer].n_rows
-        * network.weights_gradients_per_layer[layer].n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network.stream.memcpy_dtoh(
-        &network.weights_gradients_per_layer[layer].data,
-        &mut a_host,
-    )?;
-    if n < 4 {
-        println!(
-            "weights gradients (layer={}; n={}): [{}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "weights gradients (layer={}; n={}): [{}, {}, {}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-pub fn printbiasesgradients(network: &Network, layer: usize) -> Result<(), Box<dyn Error>> {
-    let n = network.biases_gradients_per_layer[layer].n_rows
-        * network.biases_gradients_per_layer[layer].n_cols;
-    let mut a_host = vec![0.0f32; n];
-    network
-        .stream
-        .memcpy_dtoh(&network.biases_gradients_per_layer[layer].data, &mut a_host)?;
-    if n < 4 {
-        println!(
-            "biases gradients (layer={}; n={}): [{}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[a_host.len() - 1]
-        );
-    } else {
-        println!(
-            "biases gradients (layer={}; n={}): [{}, {}, {}, ..., {}]",
-            layer,
-            n,
-            a_host[0],
-            a_host[1],
-            a_host[2],
-            a_host[a_host.len() - 1]
-        );
-    }
-    Ok(())
-}
-
 impl fmt::Display for Network {
-    // fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), Box<dyn Error>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let stream = self.targets.data.context().default_stream();
         write!(
             f,
             "
@@ -248,7 +73,7 @@ impl fmt::Display for Network {
                 {} (sum={})
             ]
             ",
-            *self.stream,
+            *stream,
             self.n_hidden_layers,
             self.n_hidden_nodes[0],
             self.n_hidden_nodes[self.n_hidden_nodes.len() - 1],
@@ -260,74 +85,74 @@ impl fmt::Display for Network {
             self.cost,
             self.weights_per_layer.len(),
             self.weights_per_layer[0],
-            match self.weights_per_layer[0].summat(&self.stream) {
+            match self.weights_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_per_layer[self.weights_per_layer.len() - 1],
-            match self.weights_per_layer[self.weights_per_layer.len() - 1].summat(&self.stream) {
+            match self.weights_per_layer[self.weights_per_layer.len() - 1].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer.len(),
             self.biases_per_layer[0],
-            match self.biases_per_layer[0].summat(&self.stream) {
+            match self.biases_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer[self.biases_per_layer.len() - 1],
-            match self.biases_per_layer[self.biases_per_layer.len() - 1].summat(&self.stream,) {
+            match self.biases_per_layer[self.biases_per_layer.len() - 1].summat(&stream,) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer.len(),
             self.weights_x_biases_per_layer[0],
-            match self.weights_x_biases_per_layer[0].summat(&self.stream) {
+            match self.weights_x_biases_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1],
             match self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]
-                .summat(&self.stream,)
+                .summat(&stream,)
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer.len(),
             self.activations_per_layer[0],
-            match self.activations_per_layer[0].summat(&self.stream) {
+            match self.activations_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer[self.activations_per_layer.len() - 1],
             match self.activations_per_layer[self.activations_per_layer.len() - 1]
-                .summat(&self.stream)
+                .summat(&stream)
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer.len(),
             self.weights_gradients_per_layer[0],
-            match self.weights_gradients_per_layer[0].summat(&self.stream) {
+            match self.weights_gradients_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1],
             match self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]
-                .summat(&self.stream)
+                .summat(&stream)
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer.len(),
             self.biases_gradients_per_layer[0],
-            match self.biases_gradients_per_layer[0].summat(&self.stream) {
+            match self.biases_gradients_per_layer[0].summat(&stream) {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1],
             match self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]
-                .summat(&self.stream)
+                .summat(&stream)
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
@@ -338,7 +163,7 @@ impl fmt::Display for Network {
 
 impl Network {
     pub fn new(
-        stream: Arc<CudaStream>,
+        stream: &Arc<CudaStream>,
         input_data: Matrix,
         output_data: Matrix,
         n_hidden_layers: usize,
@@ -438,7 +263,6 @@ impl Network {
             weights_x_biases_per_layer.push(weights_x_biases_matrix);
         }
         let out = Self {
-            stream: stream,
             n_hidden_layers: n_hidden_layers,
             n_hidden_nodes: n_hidden_nodes,
             dropout_rates: dropout_rates,
@@ -466,7 +290,7 @@ impl Network {
         let input_data = self.activations_per_layer[0].slice(&input_row_indexes, col_indexes)?;
         let output_data = self.targets.slice(&output_row_indexes, col_indexes)?;
         let network = Network::new(
-            self.stream.clone(),
+            &self.targets.data.context().default_stream(),
             input_data,
             output_data,
             self.n_hidden_layers,
@@ -499,7 +323,7 @@ mod tests {
         let output_matrix = Matrix::new(output_dev, k, n)?; // k x n matrix
         println!("output_matrix: {}", output_matrix);
         let mut network: Network = Network::new(
-            stream,
+            &stream,
             input_matrix,
             output_matrix,
             10,
@@ -525,15 +349,6 @@ mod tests {
             col_indexes.len()
         );
         assert_eq!(sliced_network.targets.n_cols, col_indexes.len());
-
-        let layer: usize = 1;
-        printcost(&network)?;
-        printpredictions(&network)?;
-        printactivations(&network, layer)?;
-        printweights(&network, layer)?;
-        printbiases(&network, layer)?;
-        printweightsgradients(&network, layer)?;
-        printbiasesgradients(&network, layer)?;
 
         Ok(())
     }
