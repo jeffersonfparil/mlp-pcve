@@ -1,5 +1,5 @@
 use crate::linalg::matrix::Matrix;
-use cudarc::driver::safe::{CudaContext, CudaFunction, CudaModule, LaunchArgs};
+use cudarc::driver::safe::{CudaContext, CudaFunction, LaunchArgs};
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
@@ -31,10 +31,12 @@ const ELEMENTWISESQRT: &str = "
 impl Matrix {
     pub fn elementwisematsqrt(self: &Self) -> Result<Self, Box<dyn Error>> {
         let ptx: Ptx = compile_ptx(ELEMENTWISESQRT)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuElementwiseSqrt")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuElementwiseSqrt")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;

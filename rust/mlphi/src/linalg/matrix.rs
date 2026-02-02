@@ -76,15 +76,11 @@ impl fmt::Display for Matrix {
             let idx_cols: Vec<usize> = vec![0, 1, 2, self.n_cols - 1];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
                 Ok(mat) => mat,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be sliced for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be sliced for display."),
             };
             let vec_host = match for_printing.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -115,15 +111,11 @@ impl fmt::Display for Matrix {
             let idx_cols: Vec<usize> = vec![0];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
                 Ok(mat) => mat,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be sliced for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be sliced for display."),
             };
             let vec_host = match for_printing.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -142,15 +134,11 @@ impl fmt::Display for Matrix {
             let idx_cols: Vec<usize> = vec![0, 1, 2, self.n_cols - 1];
             let for_printing: Matrix = match self.slice(&idx_rows, &idx_cols) {
                 Ok(mat) => mat,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be sliced for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be sliced for display."),
             };
             let vec_host = match for_printing.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -167,9 +155,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 3) & (self.n_cols == 3) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -191,9 +177,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 3) & (self.n_cols == 2) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -212,9 +196,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 3) & (self.n_cols == 1) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -230,9 +212,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 2) & (self.n_cols == 3) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -251,9 +231,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 1) & (self.n_cols == 3) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -269,9 +247,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 2) & (self.n_cols == 2) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -288,9 +264,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 2) & (self.n_cols == 1) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -305,9 +279,7 @@ impl fmt::Display for Matrix {
         } else if (self.n_rows == 1) & (self.n_cols == 2) {
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -323,9 +295,7 @@ impl fmt::Display for Matrix {
             // 1 x 1 matrix
             let vec_host = match self.to_host() {
                 Ok(vec) => vec,
-                Err(_) => {
-                    return write!(f, "Matrix data could not be copied to host for display.")
-                }
+                Err(_) => return write!(f, "Matrix data could not be copied to host for display."),
             };
             write!(
                 f,
@@ -341,7 +311,7 @@ impl fmt::Display for Matrix {
 }
 
 /// Matrix errors
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatrixError {
     DimensionMismatch(String),
     TypeMismatch(String),
@@ -385,7 +355,7 @@ mod tests {
         let stream = ctx.default_stream();
         let n_rows: usize = 10;
         let n_cols: usize = 50;
-        let mut a_host: Vec<f32> = (0..n_rows*n_cols).map(|x| x as f32).collect();
+        let mut a_host: Vec<f32> = (0..n_rows * n_cols).map(|x| x as f32).collect();
         rand::fill(&mut a_host[..]);
         let a_dev: CudaSlice<f32> = stream.clone_htod(&a_host)?;
         let a_matrix = Matrix::new(a_dev, n_rows, n_cols)?;
@@ -451,7 +421,7 @@ mod tests {
 
         let vec_host = a_matrix.to_host()?;
         assert_eq!(a_host, vec_host);
-        
+
         MatrixError::DimensionMismatch("Test error".to_string());
         MatrixError::TypeMismatch("Test error".to_string());
         MatrixError::OutOfBounds("Test error".to_string());

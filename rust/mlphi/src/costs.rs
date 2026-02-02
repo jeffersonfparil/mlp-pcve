@@ -1,5 +1,5 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
-use cudarc::driver::safe::{CudaContext, CudaFunction, CudaModule, LaunchArgs};
+use cudarc::driver::safe::{CudaContext, CudaFunction, LaunchArgs};
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
@@ -164,10 +164,8 @@ const HL_DERIVATIVE: &str = "
 
 pub fn mse(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MSE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuMSE")?;
+    let f: CudaFunction = a.data.context().load_module(ptx)?.load_function("cuMSE")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -195,10 +193,12 @@ pub fn mse(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn msederivative(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MSE_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuMSEDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuMSEDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -226,10 +226,8 @@ pub fn msederivative(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn mae(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MAE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuMAE")?;
+    let f: CudaFunction = a.data.context().load_module(ptx)?.load_function("cuMAE")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -257,10 +255,12 @@ pub fn mae(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn maederivative(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(MAE_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuMAEDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuMAEDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -288,10 +288,8 @@ pub fn maederivative(a: &Matrix, b: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn hl(a: &Matrix, b: &Matrix, d: f32) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HL)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuHL")?;
+    let f: CudaFunction = a.data.context().load_module(ptx)?.load_function("cuHL")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -320,10 +318,12 @@ pub fn hl(a: &Matrix, b: &Matrix, d: f32) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn hlderivative(a: &Matrix, b: &Matrix, d: f32) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HL_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuHLDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuHLDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;

@@ -15,8 +15,8 @@ pub struct Network {
     pub n_hidden_layers: usize,                   // number of hidden layers
     pub n_hidden_nodes: Vec<usize>,               // number of nodes per hidden layer (k)
     pub dropout_rates: Vec<f32>,                  // soft dropout rates per hidden layer (k)
-    pub targets: Matrix,                          // observed values (n x 1)
-    pub predictions: Matrix,                      // predictions (n x 1)
+    pub targets: Matrix,                          // observed values (k x n)
+    pub predictions: Matrix,                      // predictions (k x n)
     pub weights_per_layer: Vec<Matrix>, // weights ((n_hidden_nodes[i+1] x n_hidden_nodes[i]) for i in 0:(k-1))
     pub biases_per_layer: Vec<Matrix>,  // biases ((n_hidden_nodes[i+1] x 1) for i in 0:(k-1))
     pub weights_x_biases_per_layer: Vec<Matrix>, // summed weights (i.e. prior to activation function) ((n_hidden_nodes[i+1] x 1) for i in 0:(k-1))
@@ -85,74 +85,72 @@ impl fmt::Display for Network {
             self.cost,
             self.weights_per_layer.len(),
             self.weights_per_layer[0],
-            match self.weights_per_layer[0].summat(&stream) {
+            match self.weights_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_per_layer[self.weights_per_layer.len() - 1],
-            match self.weights_per_layer[self.weights_per_layer.len() - 1].summat(&stream) {
+            match self.weights_per_layer[self.weights_per_layer.len() - 1].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer.len(),
             self.biases_per_layer[0],
-            match self.biases_per_layer[0].summat(&stream) {
+            match self.biases_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_per_layer[self.biases_per_layer.len() - 1],
-            match self.biases_per_layer[self.biases_per_layer.len() - 1].summat(&stream,) {
+            match self.biases_per_layer[self.biases_per_layer.len() - 1].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer.len(),
             self.weights_x_biases_per_layer[0],
-            match self.weights_x_biases_per_layer[0].summat(&stream) {
+            match self.weights_x_biases_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1],
             match self.weights_x_biases_per_layer[self.weights_x_biases_per_layer.len() - 1]
-                .summat(&stream,)
+                .summat()
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer.len(),
             self.activations_per_layer[0],
-            match self.activations_per_layer[0].summat(&stream) {
+            match self.activations_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.activations_per_layer[self.activations_per_layer.len() - 1],
-            match self.activations_per_layer[self.activations_per_layer.len() - 1]
-                .summat(&stream)
-            {
+            match self.activations_per_layer[self.activations_per_layer.len() - 1].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer.len(),
             self.weights_gradients_per_layer[0],
-            match self.weights_gradients_per_layer[0].summat(&stream) {
+            match self.weights_gradients_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1],
             match self.weights_gradients_per_layer[self.weights_gradients_per_layer.len() - 1]
-                .summat(&stream)
+                .summat()
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer.len(),
             self.biases_gradients_per_layer[0],
-            match self.biases_gradients_per_layer[0].summat(&stream) {
+            match self.biases_gradients_per_layer[0].summat() {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),
             },
             self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1],
             match self.biases_gradients_per_layer[self.biases_gradients_per_layer.len() - 1]
-                .summat(&stream)
+                .summat()
             {
                 Ok(x) => x,
                 Err(_) => return Err(fmt::Error),

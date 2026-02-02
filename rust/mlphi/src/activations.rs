@@ -1,5 +1,5 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
-use cudarc::driver::safe::{CudaContext, CudaFunction, CudaModule, LaunchArgs};
+use cudarc::driver::safe::{CudaContext, CudaFunction, LaunchArgs};
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
@@ -202,10 +202,12 @@ const LEAKYRELU_DERIVATIVE: &str = "
 
 pub fn sigmoid(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SIGMOID)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuSigmoid")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuSigmoid")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -232,10 +234,12 @@ pub fn sigmoid(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn sigmoidderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(SIGMOID_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuSigmoidDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuSigmoidDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -262,10 +266,12 @@ pub fn sigmoidderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn hyperbolictangent(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuHyperbolicTangent")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuHyperbolicTangent")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -292,10 +298,12 @@ pub fn hyperbolictangent(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn hyperbolictangentderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(HYPERBOLICTANGENT_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuHyperbolicTangentDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuHyperbolicTangentDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -322,10 +330,8 @@ pub fn hyperbolictangentderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>>
 
 pub fn relu(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(RELU)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuReLU")?;
+    let f: CudaFunction = a.data.context().load_module(ptx)?.load_function("cuReLU")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -352,10 +358,12 @@ pub fn relu(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn reluderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(RELU_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuReLUDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuReLUDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -384,10 +392,12 @@ pub fn reluderivative(a: &Matrix) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn leakyrelu(a: &Matrix, s: f32) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(LEAKYRELU)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuLeakyReLU")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuLeakyReLU")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;
@@ -415,10 +425,12 @@ pub fn leakyrelu(a: &Matrix, s: f32) -> Result<Matrix, Box<dyn Error>> {
 
 pub fn leakyreluderivative(a: &Matrix, s: f32) -> Result<Matrix, Box<dyn Error>> {
     let ptx: Ptx = compile_ptx(LEAKYRELU_DERIVATIVE)?;
-    let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-    let stream: Arc<CudaStream> = ctx.default_stream();
-    let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-    let f: CudaFunction = module.load_function("cuLeakyReLUDerivative")?;
+    let f: CudaFunction = a
+        .data
+        .context()
+        .load_module(ptx)?
+        .load_function("cuLeakyReLUDerivative")?;
+    let stream: Arc<CudaStream> = a.data.context().default_stream();
     let mut builder: LaunchArgs = stream.launch_builder(&f);
     let n_rows: u32 = a.n_rows as u32;
     let n_cols: u32 = a.n_cols as u32;

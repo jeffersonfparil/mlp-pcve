@@ -1,5 +1,5 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
-use cudarc::driver::safe::{CudaContext, CudaFunction, CudaModule, LaunchArgs};
+use cudarc::driver::safe::{CudaContext, CudaFunction, LaunchArgs};
 use cudarc::driver::{CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use cudarc::nvrtc::safe::Ptx;
@@ -238,10 +238,12 @@ const MATMULTT: &str = "
 impl Matrix {
     pub fn scalarmatmul(self: &Self, s: f32) -> Result<Self, Box<dyn Error>> {
         let ptx: Ptx = compile_ptx(SCALARMATMUL)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuScalarMatMul")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuScalarMatMul")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -269,10 +271,12 @@ impl Matrix {
 
     pub fn elementwisematinverse(self: &Self) -> Result<Self, Box<dyn Error>> {
         let ptx: Ptx = compile_ptx(ELEMENTWISEMATINVERSE)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuElementwiseMatInverse")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuElementwiseMatInverse")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -299,10 +303,12 @@ impl Matrix {
 
     pub fn elementwisematpower(self: &Self, power: f32) -> Result<Self, Box<dyn Error>> {
         let ptx: Ptx = compile_ptx(ELEMENTWISEMATPOWER)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuElementwiseMatPower")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuElementwiseMatPower")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -336,10 +342,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(ELEMENTWISEMATMUL)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuElementwiseMatMul")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuElementwiseMatMul")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -373,10 +381,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(ROWMATMUL)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuRowMatMul")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuRowMatMul")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -410,10 +420,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(COLMATMUL)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuColMatMul")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuColMatMul")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = self.n_cols as u32;
@@ -447,10 +459,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(MATMUL)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuMatMul")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuMatMul")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_rows: u32 = self.n_rows as u32;
         let n_cols: u32 = b.n_cols as u32;
@@ -486,10 +500,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(MATMULT0)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuMatMulT0")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuMatMulT0")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let p_a: u32 = self.n_cols as u32;
         let p_b: u32 = b.n_cols as u32;
@@ -525,10 +541,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(MATMUL0T)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuMatMul0T")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuMatMul0T")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let n_a: u32 = self.n_rows as u32;
         let n_b: u32 = b.n_rows as u32;
@@ -564,10 +582,12 @@ impl Matrix {
             ))));
         }
         let ptx: Ptx = compile_ptx(MATMULTT)?;
-        let ctx: Arc<CudaContext> = CudaContext::new(0)?;
-        let stream: Arc<CudaStream> = ctx.default_stream();
-        let module: Arc<CudaModule> = ctx.load_module(ptx)?;
-        let f: CudaFunction = module.load_function("cuMatMulTT")?;
+        let f: CudaFunction = self
+            .data
+            .context()
+            .load_module(ptx)?
+            .load_function("cuMatMulTT")?;
+        let stream: Arc<CudaStream> = self.data.context().default_stream();
         let mut builder: LaunchArgs = stream.launch_builder(&f);
         let p_a: u32 = self.n_cols as u32;
         let n_b: u32 = b.n_rows as u32;

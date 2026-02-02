@@ -44,9 +44,8 @@ impl Network {
                 .matmul0t(&self.activations_per_layer[i])?
                 .clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
             // Sum-up the errors across n samples in the current hidden layer to calculate the gradients for the bias
-            self.biases_gradients_per_layer[i] = delta[j]
-                .rowsummat(&self.targets.data.context().default_stream())?
-                .clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
+            self.biases_gradients_per_layer[i] =
+                delta[j].rowsummat()?.clamp(CLAMP_LOWER, CLAMP_UPPER)?; // Clamping to prevent exploding gradients
         }
         Ok(())
     }
@@ -86,17 +85,15 @@ mod tests {
         let i = 1;
         println!(
             "layer {} weights gradients (before backpropagation):\n{}",
-            i,
-            network.weights_gradients_per_layer[i],
+            i, network.weights_gradients_per_layer[i],
         );
         network.backpropagation()?;
         println!(
             "layer {} weights gradients (after without forwardpass):\n{}",
-            i,
-            network.weights_gradients_per_layer[i],
+            i, network.weights_gradients_per_layer[i],
         );
         // Without prior forward pass all weights become zero because the `weights_x_biases_per_layer` are initialised as all zeroes!
-        let s = network.weights_gradients_per_layer[i].summat(&stream)?;
+        let s = network.weights_gradients_per_layer[i].summat()?;
         println!("s (without forwardpass) = {}", s);
         assert!(s == 0.0);
         // Reset weights to random values then run with forward pass prior to backpropagation
@@ -113,16 +110,14 @@ mod tests {
         network.forwardpass()?;
         println!(
             "layer {} weights gradients (after forwardpass):\n{}",
-            i,
-            network.weights_gradients_per_layer[i],
+            i, network.weights_gradients_per_layer[i],
         );
         network.backpropagation()?;
         println!(
             "layer {} weights gradients (after backpropagation WITH forwardpass):\n{}",
-            i,
-            network.weights_gradients_per_layer[i],
+            i, network.weights_gradients_per_layer[i],
         );
-        let s = network.weights_gradients_per_layer[i].summat(&stream)?;
+        let s = network.weights_gradients_per_layer[i].summat()?;
         println!("s (with forwardpass) = {}", s);
         assert!(s != 0.0);
         Ok(())

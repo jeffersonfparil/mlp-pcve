@@ -1,4 +1,6 @@
 use crate::linalg::matrix::{Matrix, MatrixError};
+use crate::activations::Activation;
+use crate::costs::Cost;
 use crate::network::Network;
 use crate::optimisers::{OptimisationParameters, Optimiser};
 use chrono::Utc;
@@ -7,8 +9,9 @@ use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
 use ruviz::core::{Plot, PlottingError};
 use ruviz::prelude::LegendPosition;
-use std::env;
 use std::error::Error;
+use std::path::PathBuf;
+use std::env::current_dir;
 
 impl From<PlottingError> for MatrixError {
     fn from(err: PlottingError) -> Self {
@@ -79,13 +82,17 @@ impl Network {
             self.optimise(optimisation_parameters)?;
             self.predict()?;
             let e: f64 = epoch as f64;
-            let c: f64 = (self
-                .cost
-                .cost(&self.predictions, &self.targets)?
-                .summat(&self.targets.data.context().default_stream())? as f64)
+            let c: f64 = (self.cost.cost(&self.predictions, &self.targets)?.summat()? as f64)
                 / (self.targets.n_cols as f64);
             epochs.push(e);
             costs.push(c);
+
+            // TODO: add early stopping criterion...
+            if epoch > 0 && costs[epoch] > costs[epoch - 1] {
+                println!("Early stopping at epoch {}", epoch);
+                break;
+            } // probably replace with something more sophisticated??
+
         }
         Ok((epochs, costs))
     }
@@ -139,10 +146,8 @@ impl Network {
                     vec![0.0; self.weights_per_layer[i].n_rows * self.weights_per_layer[i].n_cols];
                 let zeros_biases_host: Vec<f32> =
                     vec![0.0; self.biases_per_layer[i].n_rows * self.biases_per_layer[i].n_cols];
-                let zeros_weights_dev: CudaSlice<f32> =
-                    stream.clone_htod(&zeros_weights_host)?;
-                let zeros_biases_dev: CudaSlice<f32> =
-                    stream.clone_htod(&zeros_biases_host)?;
+                let zeros_weights_dev: CudaSlice<f32> = stream.clone_htod(&zeros_weights_host)?;
+                let zeros_biases_dev: CudaSlice<f32> = stream.clone_htod(&zeros_biases_host)?;
                 let mut summed_weights = Matrix::new(
                     zeros_weights_dev,
                     self.weights_per_layer[i].n_rows,
@@ -172,10 +177,9 @@ impl Network {
         if verbose {
             // Assess cost after training
             let final_cost = self.cost.cost(&self.predictions, &self.targets)?;
-            let final_cost_value =
-                final_cost.summat(&stream)? as f32 / self.targets.n_cols as f32;
+            let final_cost_value = final_cost.summat()? as f32 / self.targets.n_cols as f32;
             // Plot loss curve
-            let dir: std::path::PathBuf = env::current_dir()?;
+            let dir: PathBuf = current_dir()?;
             let fname_svg = &format!(
                 "{}/Loss_curve-{:?}-Time{}.svg",
                 dir.display(),
@@ -209,6 +213,98 @@ impl Network {
             println!("Final cost after training: {}", final_cost_value);
             println!("Find the loss curve saved as: {}", fname_svg);
         }
+        Ok(())
+    }
+
+    pub fn hyper_optimise(
+        self: &mut Self,
+        range_hidden_layers: (i32, i32, i32),
+        range_hidden_layer_nodes: (i32, i32, i32),
+        range_dropout_rate: (f32, f32, f32),
+        range_learning_rate: (f32, f32, f32),
+        range_n_epochs: (i32, i32, i32),
+        range_n_batches: (i32, i32, i32),
+    ) -> Result<(), Box<dyn Error>> {
+        let mut selection_hidden_layers: Vec<usize> = Vec::new();
+        let mut selection_hidden_layer_nodes: Vec<usize> = Vec::new();
+        let mut selection_dropout_rate: Vec<f32> = Vec::new();
+        let mut selection_learning_rate: Vec<f32> = Vec::new();
+        let mut selection_n_epochs: Vec<usize> = Vec::new();
+        let mut selection_n_batches: Vec<usize> = Vec::new();
+        let (start_hl, end_hl, step_hl) = range_hidden_layers;
+        let (start_hln, end_hln, step_hln) = range_hidden_layer_nodes;
+        let (start_dr, end_dr, step_dr) = range_dropout_rate;
+        let (start_lr, end_lr, step_lr) = range_learning_rate;
+        let (start_ne, end_ne, step_ne) = range_n_epochs;
+        let (start_nb, end_nb, step_nb) = range_n_batches;
+        if (step_hl >= 0) & (end_hl < start_hl) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for hidden layers.".to_string(),
+            )));
+        }
+        if (step_hln >= 0) & (end_hln < start_hln) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for hidden layer nodes.".to_string(),
+            )));
+        }
+        if (step_dr >= 0.0) & (end_dr < start_dr) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for dropout rate.".to_string(),
+            )));
+        }
+        if (step_lr >= 0.0) & (end_lr < start_lr) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for learning rate.".to_string(),
+            )));
+        }
+        if (step_ne >= 0) & (end_ne < start_ne) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for number of epochs.".to_string(),
+            )));
+        }
+        if (step_nb >= 0) & (end_nb < start_nb) {
+            return Err(Box::new(MatrixError::OtherError(
+                "Invalid range for number of batches.".to_string(),
+            )));
+        }
+        let mut hl = start_hl;
+        while hl <= end_hl {
+            selection_hidden_layers.push(hl as usize);
+            hl += step_hl;
+        }
+        let mut hln = start_hln;
+        while hln <= end_hln {
+            selection_hidden_layer_nodes.push(hln as usize);
+            hln += step_hln;
+        }
+        let mut dr = start_dr;
+        while dr <= end_dr {
+            selection_dropout_rate.push(dr);
+            dr += step_dr;
+        }
+        let mut lr = start_lr;
+        while lr <= end_lr {
+            selection_learning_rate.push(lr);
+            lr += step_lr;
+        }
+        let mut ne = start_ne;
+        while ne <= end_ne {
+            selection_n_epochs.push(ne as usize);
+            ne += step_ne;
+        }
+        let mut nb = start_nb;
+        while nb <= end_nb {
+            selection_n_batches.push(nb as usize);
+            nb += step_nb;
+        }
+
+        let selection_activations: Vec<Activation> = vec![Activation::ReLU];
+        let selection_costs: Vec<Cost> = vec![Cost::MSE];
+        let selection_optimisers: Vec<Optimiser> = vec![Optimiser::Adam, Optimiser::AdamMax, Optimiser::GradientDescent];
+
+        // Hyper-parameter optimisations
+        // TODO...
+
         Ok(())
     }
 }

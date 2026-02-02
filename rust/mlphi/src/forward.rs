@@ -5,6 +5,13 @@ use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
 use std::error::Error;
 
+// Notes:
+// Matrices are in shape (n_rows, n_cols) = (nodes, samples), i.e.:
+//      - activations_per_layer[i]: activations of layer i, shape (n_hidden_nodes[i-1], n_samples).
+//      - weights_per_layer[i]: weights connecting layer i to layer i+1, shape (n_hidden_nodes[i], n_hidden_nodes[i-1]).
+//      - biases_per_layer[i]: biases of layer i+1, shape (n_hidden_nodes[i], 1).
+//      - weights_x_biases_per_layer[i]: pre-activation values of layer i+1, shape (n_hidden_nodes[i], n_samples).
+
 impl Network {
     pub fn forwardpass(&mut self) -> Result<(), Box<dyn Error>> {
         // Updates:
@@ -22,7 +29,12 @@ impl Network {
                 for i in idx_dropped_nodes {
                     d[i] = 0.0;
                 }
-                let d_dev: CudaSlice<f32> = self.targets.data.context().default_stream().clone_htod(&d)?;
+                let d_dev: CudaSlice<f32> = self
+                    .targets
+                    .data
+                    .context()
+                    .default_stream()
+                    .clone_htod(&d)?;
                 let d_matrix = Matrix::new(d_dev, n_nodes, 1)?;
                 let x = self.weights_per_layer[i].rowmatmul(&d_matrix)?;
                 x.matmul(&self.activations_per_layer[i])?
@@ -71,19 +83,15 @@ mod tests {
         let i: usize = network.n_hidden_layers - 1;
         println!(
             "layer {} activations (before forward pass):\n{}",
-            i,
-            network.activations_per_layer[i],
+            i, network.activations_per_layer[i],
         );
         // Forward pass
         network.forwardpass()?;
         println!(
             "layer {} activations (after forward pass):\n{}",
-            i,
-            network.activations_per_layer[i],
+            i, network.activations_per_layer[i],
         );
-        let sum_1: f32 = network
-            .activations_per_layer[i]
-            .summat(&stream)?;
+        let sum_1: f32 = network.activations_per_layer[i].summat()?;
         // Modify weights (set all weights to 1.00 instead of random values between 0 and 1) and forward pass
         let b_host = vec![
             1.0f32;
@@ -100,12 +108,9 @@ mod tests {
         network.forwardpass()?;
         println!(
             "layer {} activations (after forward pass with weights all set to 1):\n{}",
-            i,
-            network.activations_per_layer[i],
+            i, network.activations_per_layer[i],
         );
-        let sum_2: f32 = network
-            .activations_per_layer[i]
-            .summat(&stream)?;
+        let sum_2: f32 = network.activations_per_layer[i].summat()?;
         // We expect the sum of activations using weights between 0 and 1 is lower the that using weights all set to 1.
         assert!(sum_1 < sum_2);
         Ok(())
