@@ -15,6 +15,7 @@ pub enum Optimiser {
 pub struct OptimisationParameters {
     pub optimiser: Optimiser,     // Adam by default
     pub n_epochs: usize,          // t = 10
+    pub f_patient_epochs: f32,  // f = 0.25 // fraction of n_epochs to wait before early stopping
     pub n_batches: usize,         // b = 1
     pub learning_rate: f32,       // η = 0.001
     pub first_moment_decay: f32,  // β₁ = 0.900
@@ -34,6 +35,7 @@ impl fmt::Display for OptimisationParameters {
             "Optimisation Parameters:
                 - optimiser = {:?}
                 - number of epochs = {}
+                - fraction of patient epochs = {}
                 - number of batches = {}
                 - base learning rate = {}
                 - first moment decay coefficient = {}
@@ -47,6 +49,7 @@ impl fmt::Display for OptimisationParameters {
             ",
             self.optimiser,
             self.n_epochs,
+            self.f_patient_epochs,
             self.n_batches,
             self.learning_rate,
             self.first_moment_decay,
@@ -261,6 +264,7 @@ impl OptimisationParameters {
         let out = Self {
             optimiser: Optimiser::Adam,
             n_epochs: 10,
+            f_patient_epochs: 0.25,
             n_batches: 1,
             learning_rate: 0.001,
             first_moment_decay: 0.900,

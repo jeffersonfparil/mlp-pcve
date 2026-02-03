@@ -337,7 +337,7 @@ impl Matrix {
     pub fn elementwisematmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_rows != b.n_rows) | (self.n_cols != b.n_cols) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
+                "in `elementwisematmul`: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
                 self.n_rows, b.n_rows, self.n_cols, b.n_cols
             ))));
         }
@@ -376,7 +376,7 @@ impl Matrix {
     pub fn rowmatmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_rows != b.n_rows) | (b.n_cols != 1) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
+                "in `rowmatmul`: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
                 self.n_rows, b.n_rows, b.n_cols
             ))));
         }
@@ -415,7 +415,7 @@ impl Matrix {
     pub fn colmatmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_cols != b.n_cols) | (b.n_rows != 1) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
+                "in `colmatmul`: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
                 self.n_cols, b.n_cols, b.n_rows
             ))));
         }
@@ -454,7 +454,7 @@ impl Matrix {
     pub fn matmul(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if self.n_cols != b.n_rows {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_cols ({}) != b.n_rows ({})",
+                "in `matmul`: self.n_cols ({}) != b.n_rows ({})",
                 self.n_cols, b.n_rows
             ))));
         }
@@ -495,7 +495,7 @@ impl Matrix {
     pub fn matmult0(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if self.n_rows != b.n_rows {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({})",
+                "in `matmult0`: self.n_rows ({}) != b.n_rows ({})",
                 self.n_rows, b.n_rows
             ))));
         }
@@ -536,7 +536,7 @@ impl Matrix {
     pub fn matmul0t(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if self.n_cols != b.n_cols {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({})",
+                "in `matmul0t`: self.n_cols ({}) != b.n_cols ({})",
                 self.n_cols, b.n_cols
             ))));
         }
@@ -577,7 +577,7 @@ impl Matrix {
     pub fn matmultt(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if self.n_rows != b.n_cols {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_cols ({})",
+                "in `matmultt`: self.n_rows ({}) != b.n_cols ({})",
                 self.n_rows, b.n_cols
             ))));
         }

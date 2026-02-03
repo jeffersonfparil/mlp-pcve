@@ -1,4 +1,4 @@
-use crate::linalg::matrix::{Matrix, MatrixError};
+use crate::linalg::matrix::Matrix;
 use crate::activations::Activation;
 use crate::costs::Cost;
 use crate::network::Network;
@@ -9,26 +9,171 @@ use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
 use ruviz::core::{Plot, PlottingError};
 use ruviz::prelude::LegendPosition;
+use std::fmt;
+use std::ops::Add;
 use std::error::Error;
 use std::path::PathBuf;
 use std::env::current_dir;
+use rayon::prelude::*;
+use std::sync::Mutex;
 
-impl From<PlottingError> for MatrixError {
-    fn from(err: PlottingError) -> Self {
-        MatrixError::CompileError(err.to_string())
+#[derive(Debug, PartialEq)]
+enum TrainingError {
+    BatchingError(String),
+    EpochError(String),
+    OtherError(String),
+}
+
+/// Implement Error for TrainingError
+impl Error for TrainingError {}
+
+/// Implement std::fmt::Display for TrainingError
+impl fmt::Display for TrainingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TrainingError::BatchingError(msg) => write!(f, "Batching error during training: {}", msg),
+            TrainingError::EpochError(msg) => write!(f, "Epoch error during training: {}", msg),
+            TrainingError::OtherError(msg) => write!(f, "Other error during training: {}", msg),
+        }
     }
+}
+
+impl From<PlottingError> for TrainingError {
+    fn from(err: PlottingError) -> Self {
+        TrainingError::OtherError(err.to_string())
+    }
+}
+
+fn prep_each_hyperparam<T>(param_min_max_step: (T, T, T)) -> Result<Vec<T>, Box<dyn Error>>
+where
+    T: Copy + PartialOrd + Add<Output = T> + Default + PartialEq,
+{
+    let (min, max, step) = param_min_max_step;
+    if step == T::default() {
+        return Err(Box::new(TrainingError::OtherError(
+            "Step must be non-zero.".to_string(),
+        )));
+    }
+    // if step > 0 and max < min -> invalid; if step < 0 and max > min -> invalid
+    if (step > T::default() && max < min) || (step < T::default() && max > min) {
+        return Err(Box::new(TrainingError::OtherError(
+            "Invalid range.".to_string(),
+        )));
+    }
+    let mut selection: Vec<T> = Vec::new();
+    let mut x = min;
+    if step > T::default() {
+        while x <= max {
+            selection.push(x);
+            x = x + step;
+        }
+    } else {
+        while x >= max {
+            selection.push(x);
+            x = x + step; // step is negative here
+        }
+    }
+    Ok(selection)
+}
+
+fn prep_all_hyperparams(
+    range_hidden_layers: Option<(usize, usize, usize)>,
+    range_hidden_layer_nodes: Option<(usize, usize, usize)>,
+    range_dropout_rate: Option<(f32, f32, f32)>,
+    range_learning_rate: Option<(f32, f32, f32)>,
+    range_n_epochs: Option<(usize, usize, usize)>,
+    range_f_patient_epochs: Option<(f32, f32, f32)>,
+    range_n_batches: Option<(usize, usize, usize)>,
+    selection_activations: Option<Vec<Activation>>,
+    selection_costs: Option<Vec<Cost>>,
+    selection_optimisers: Option<Vec<Optimiser>>,
+) -> Result<Vec<(usize, usize, f32, f32, usize, f32, usize, Activation, Cost, Optimiser)>, Box<dyn Error>> {
+    let selection_hidden_layers: Vec<usize> = match range_hidden_layers {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((1, 3, 1))?
+    };
+    let selection_hidden_layer_nodes: Vec<usize> = match range_hidden_layer_nodes {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((100, 500, 100))?
+    };
+    let selection_dropout_rates: Vec<f32> = match range_dropout_rate {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((0.0, 0.5, 0.01))?
+    };
+    let selection_learning_rates: Vec<f32> = match range_learning_rate {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((1e-5, 1e-2, 1e-4))?
+    };
+    let selection_n_epochs: Vec<usize> = match range_n_epochs {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((5, 10, 1))?
+    };
+    let selection_f_patient_epochs: Vec<f32> = match range_f_patient_epochs {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((0.5, 1.0, 0.5))?
+    };
+    let selection_n_batches: Vec<usize> = match range_n_batches {
+        Some(x) => prep_each_hyperparam(x)?,
+        None => prep_each_hyperparam((1, 3, 1))?
+    };
+    let selection_activations: Vec<Activation> = match selection_activations {
+        Some(x) => x,
+        None => vec![Activation::ReLU],
+    };
+    let selection_costs: Vec<Cost> = match selection_costs {
+        Some(x) => x,
+        None => vec![Cost::MSE],
+    };
+    let selection_optimisers: Vec<Optimiser> = match selection_optimisers {
+        Some(x) => x,
+        None => vec![Optimiser::Adam, Optimiser::AdamMax, Optimiser::GradientDescent],
+    };
+    let mut param_combinations: Vec<(usize, usize, f32, f32, usize, f32, usize, Activation, Cost, Optimiser)> = Vec::new();
+    for n_hidden_layers in &selection_hidden_layers {
+        for n_hidden_nodes in &selection_hidden_layer_nodes {
+            for dropout_rate in &selection_dropout_rates {
+                for learning_rate in &selection_learning_rates {
+                    for n_epochs in &selection_n_epochs {
+                        for f_patient_epochs in &selection_f_patient_epochs {
+                            for n_batches in &selection_n_batches {
+                                for activation in &selection_activations {
+                                    for cost in &selection_costs {
+                                        for optimiser in &selection_optimisers {
+                                            param_combinations.push((
+                                                *n_hidden_layers,
+                                                *n_hidden_nodes,
+                                                *dropout_rate,
+                                                *learning_rate,
+                                                *n_epochs,
+                                                *f_patient_epochs,
+                                                *n_batches,
+                                                activation.clone(),
+                                                cost.clone(),
+                                                optimiser.clone(),
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(param_combinations)
 }
 
 impl Network {
     pub fn shufflesplit(self: &Self, n_batches: usize) -> Result<Vec<Vec<usize>>, Box<dyn Error>> {
         let n: usize = self.targets.n_cols; // number of observations
         if n_batches == 0 {
-            return Err(Box::new(MatrixError::OtherError(
+            return Err(Box::new(TrainingError::BatchingError(
                 "Number of batches must be greater than zero.".to_string(),
             )));
         }
         if n_batches > n {
-            return Err(Box::new(MatrixError::OtherError(
+            return Err(Box::new(TrainingError::BatchingError(
                 "Number of batches cannot be greater than number of observations.".to_string(),
             )));
         }
@@ -76,6 +221,7 @@ impl Network {
     ) -> Result<(Vec<f64>, Vec<f64>), Box<dyn Error>> {
         let mut epochs: Vec<f64> = Vec::new();
         let mut costs: Vec<f64> = Vec::new();
+        let n_patient_epochs = (optimisation_parameters.f_patient_epochs * optimisation_parameters.n_epochs as f32).ceil() as usize;
         for epoch in 0..optimisation_parameters.n_epochs {
             self.forwardpass()?;
             self.backpropagation()?;
@@ -86,24 +232,28 @@ impl Network {
                 / (self.targets.n_cols as f64);
             epochs.push(e);
             costs.push(c);
-
-            // TODO: add early stopping criterion...
-            if epoch > 0 && costs[epoch] > costs[epoch - 1] {
-                println!("Early stopping at epoch {}", epoch);
+            // Early stopping check, i.e. stop if no improvement in cost after n_patient_epochs
+            if (epoch > n_patient_epochs) && (costs[epoch] >= costs[epoch - n_patient_epochs]) {
+                // println!("Early stopping at epoch {}", epoch);
                 break;
-            } // probably replace with something more sophisticated??
-
+            }
         }
         Ok((epochs, costs))
     }
 
     pub fn train(
         self: &mut Self,
-        optimisation_parameters: &mut OptimisationParameters,
+        optimisation_parameters: &OptimisationParameters,
         verbose: bool,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<f32, Box<dyn Error>> {
+        self.check_dimensions()?;
+        if optimisation_parameters.n_epochs == 0 {
+            return Err(Box::new(TrainingError::EpochError(
+                "Number of epochs must be greater than zero.".to_string(),
+            )));
+        }
         if optimisation_parameters.n_batches == 0 {
-            return Err(Box::new(MatrixError::OtherError(
+            return Err(Box::new(TrainingError::BatchingError(
                 "Number of batches must be greater than zero.".to_string(),
             )));
         }
@@ -112,7 +262,8 @@ impl Network {
             == 1
         {
             // Only one batch, train on the whole dataset
-            let (epochs, costs) = self.train_per_batch(optimisation_parameters)?; // performs the prediction internally after every epoch, hence no need to call self.predict() again
+            let mut params = optimisation_parameters.clone();
+            let (epochs, costs) = self.train_per_batch(&mut params)?;
             (vec![epochs], vec![costs])
         } else {
             // Multiple batches, split the dataset then average the parameters after training on each batch
@@ -125,22 +276,32 @@ impl Network {
                 let network = self.slice(&col_indexes)?;
                 networks_per_batch.push(network);
             }
-            let mut epochs: Vec<Vec<f64>> = Vec::new();
-            let mut costs: Vec<Vec<f64>> = Vec::new();
-            for (i, network) in networks_per_batch.iter_mut().enumerate() {
-                if verbose {
-                    println!(
-                        "Training on batch {} with {} observations.",
-                        i, network.targets.n_cols
-                    );
-                }
-                let (epochs_batch, costs_batch) =
-                    network.train_per_batch(optimisation_parameters)?;
-                epochs.push(epochs_batch.clone());
-                costs.push(costs_batch.clone());
-            }
-            // Merge the parameters from each batch network back into the original network
-            // TODO: update this simple averaging with a better method
+            let epochs: Mutex<Vec<Vec<f64>>> = Mutex::new(Vec::new());
+            let costs: Mutex<Vec<Vec<f64>>> = Mutex::new(Vec::new());
+            networks_per_batch
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, network)| {
+                    if verbose {
+                        println!(
+                            "Training on batch {} with {} observations.",
+                            i, network.targets.n_cols
+                        );
+                    }
+                    let mut params = optimisation_parameters.clone();
+                    let result = network.train_per_batch(&mut params);
+                    match result {
+                        Ok((epochs_batch, costs_batch)) => {
+                            epochs.lock().unwrap().push(epochs_batch);
+                            costs.lock().unwrap().push(costs_batch);
+                        }
+                        Err(e) => {
+                            // Skip the batch
+                            eprintln!("Error training on batch {}: {}", i, e);
+                        }
+                    }
+                });
+            // Merge the parameters from each batch network back into the original network via simple averaging with a better method
             for i in 0..self.n_hidden_layers + 1 {
                 let zeros_weights_host: Vec<f32> =
                     vec![0.0; self.weights_per_layer[i].n_rows * self.weights_per_layer[i].n_cols];
@@ -172,18 +333,26 @@ impl Network {
             // Update predictions using the merged parameters
             self.predict()?;
             // Return epochs, costs
-            (epochs, costs)
+            (
+                epochs.into_inner().unwrap(),
+                costs.into_inner().unwrap(),
+            )
         };
+        // Assess cost after training
+        let final_cost = self.cost.cost(&self.predictions, &self.targets)?;
+        let final_cost_value = final_cost.summat()? as f32 / self.targets.n_cols as f32;
         if verbose {
-            // Assess cost after training
-            let final_cost = self.cost.cost(&self.predictions, &self.targets)?;
-            let final_cost_value = final_cost.summat()? as f32 / self.targets.n_cols as f32;
             // Plot loss curve
             let dir: PathBuf = current_dir()?;
             let fname_svg = &format!(
-                "{}/Loss_curve-{:?}-Time{}.svg",
+                "{}/Loss_curve-{:?}-E{}-FPE{}-LR{}-{:?}-N{}-Time{}.svg",
                 dir.display(),
                 optimisation_parameters.optimiser,
+                optimisation_parameters.n_epochs,
+                optimisation_parameters.f_patient_epochs,
+                optimisation_parameters.learning_rate,
+                self.activation,
+                self.n_hidden_layers,
                 Utc::now().format("%Y%m%d%H%M%S")
             );
             let mut ylabel = String::from("Cost");
@@ -201,7 +370,7 @@ impl Network {
                     .label("Batch 0")
                     .size(4.0, 3.0),
             ];
-            for i in 1..epochs.len() {
+            for i in 1..optimisation_parameters.n_batches {
                 plot_vec[0] = plot_vec[0]
                     .clone()
                     .line(&epochs[i], &costs[i])
@@ -213,98 +382,165 @@ impl Network {
             println!("Final cost after training: {}", final_cost_value);
             println!("Find the loss curve saved as: {}", fname_svg);
         }
-        Ok(())
+        Ok(final_cost_value)
     }
 
-    pub fn hyper_optimise(
+    pub fn hyperoptimise(
         self: &mut Self,
-        range_hidden_layers: (i32, i32, i32),
-        range_hidden_layer_nodes: (i32, i32, i32),
-        range_dropout_rate: (f32, f32, f32),
-        range_learning_rate: (f32, f32, f32),
-        range_n_epochs: (i32, i32, i32),
-        range_n_batches: (i32, i32, i32),
+        range_hidden_layers: Option<(usize, usize, usize)>,
+        range_hidden_layer_nodes: Option<(usize, usize, usize)>,
+        range_dropout_rate: Option<(f32, f32, f32)>,
+        range_learning_rate: Option<(f32, f32, f32)>,
+        range_n_epochs: Option<(usize, usize, usize)>,
+        range_f_patient_epochs: Option<(f32, f32, f32)>,
+        range_n_batches: Option<(usize, usize, usize)>,
+        selection_activations: Option<Vec<Activation>>,
+        selection_costs: Option<Vec<Cost>>,
+        selection_optimisers: Option<Vec<Optimiser>>,
+        verbose: bool,
     ) -> Result<(), Box<dyn Error>> {
-        let mut selection_hidden_layers: Vec<usize> = Vec::new();
-        let mut selection_hidden_layer_nodes: Vec<usize> = Vec::new();
-        let mut selection_dropout_rate: Vec<f32> = Vec::new();
-        let mut selection_learning_rate: Vec<f32> = Vec::new();
-        let mut selection_n_epochs: Vec<usize> = Vec::new();
-        let mut selection_n_batches: Vec<usize> = Vec::new();
-        let (start_hl, end_hl, step_hl) = range_hidden_layers;
-        let (start_hln, end_hln, step_hln) = range_hidden_layer_nodes;
-        let (start_dr, end_dr, step_dr) = range_dropout_rate;
-        let (start_lr, end_lr, step_lr) = range_learning_rate;
-        let (start_ne, end_ne, step_ne) = range_n_epochs;
-        let (start_nb, end_nb, step_nb) = range_n_batches;
-        if (step_hl >= 0) & (end_hl < start_hl) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for hidden layers.".to_string(),
-            )));
-        }
-        if (step_hln >= 0) & (end_hln < start_hln) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for hidden layer nodes.".to_string(),
-            )));
-        }
-        if (step_dr >= 0.0) & (end_dr < start_dr) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for dropout rate.".to_string(),
-            )));
-        }
-        if (step_lr >= 0.0) & (end_lr < start_lr) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for learning rate.".to_string(),
-            )));
-        }
-        if (step_ne >= 0) & (end_ne < start_ne) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for number of epochs.".to_string(),
-            )));
-        }
-        if (step_nb >= 0) & (end_nb < start_nb) {
-            return Err(Box::new(MatrixError::OtherError(
-                "Invalid range for number of batches.".to_string(),
-            )));
-        }
-        let mut hl = start_hl;
-        while hl <= end_hl {
-            selection_hidden_layers.push(hl as usize);
-            hl += step_hl;
-        }
-        let mut hln = start_hln;
-        while hln <= end_hln {
-            selection_hidden_layer_nodes.push(hln as usize);
-            hln += step_hln;
-        }
-        let mut dr = start_dr;
-        while dr <= end_dr {
-            selection_dropout_rate.push(dr);
-            dr += step_dr;
-        }
-        let mut lr = start_lr;
-        while lr <= end_lr {
-            selection_learning_rate.push(lr);
-            lr += step_lr;
-        }
-        let mut ne = start_ne;
-        while ne <= end_ne {
-            selection_n_epochs.push(ne as usize);
-            ne += step_ne;
-        }
-        let mut nb = start_nb;
-        while nb <= end_nb {
-            selection_n_batches.push(nb as usize);
-            nb += step_nb;
-        }
-
-        let selection_activations: Vec<Activation> = vec![Activation::ReLU];
-        let selection_costs: Vec<Cost> = vec![Cost::MSE];
-        let selection_optimisers: Vec<Optimiser> = vec![Optimiser::Adam, Optimiser::AdamMax, Optimiser::GradientDescent];
-
+        self.check_dimensions()?;
+        let param_combinations = prep_all_hyperparams(
+            range_hidden_layers,
+            range_hidden_layer_nodes,
+            range_dropout_rate,
+            range_learning_rate,
+            range_n_epochs,
+            range_f_patient_epochs,
+            range_n_batches,
+            selection_activations,
+            selection_costs,
+            selection_optimisers,
+        )?;
         // Hyper-parameter optimisations
-        // TODO...
-
+        let mut results: Vec<(
+            usize,
+            usize,
+            f32,
+            f32,
+            usize,
+            f32,
+            usize,
+            Activation,
+            Cost,
+            Optimiser,
+            Result<f32, Box<dyn Error>>,
+        )> = Vec::new();
+        for p in param_combinations {
+            let (
+                n_hidden_layers,
+                n_hidden_nodes,
+                dropout_rate,
+                learning_rate,
+                n_epochs,
+                f_patient_epochs,
+                n_batches,
+                activation,
+                cost,
+                optimiser,
+            ) = p;
+            // Create a new instance of the network with the current hyper-parameters
+            let mut network = Network::new(
+                &self.activations_per_layer[0].data.context().default_stream(),
+                self.activations_per_layer[0].clone(),
+                self.targets.clone(),
+                n_hidden_layers,
+                vec![n_hidden_nodes; n_hidden_layers],
+                vec![dropout_rate; n_hidden_layers],
+                self.seed,
+            )?;
+            network.activation = activation.clone();
+            network.cost = cost.clone();
+            let mut optimisation_parameters = OptimisationParameters::new(&network)?;
+            optimisation_parameters.learning_rate = learning_rate;
+            optimisation_parameters.n_epochs = n_epochs;
+            optimisation_parameters.f_patient_epochs = f_patient_epochs;
+            optimisation_parameters.n_batches = n_batches;
+            optimisation_parameters.optimiser = optimiser.clone();
+            // Train the network with the current hyper-parameters
+            let result = network.train(&optimisation_parameters, verbose);
+            // Store the result of the training
+            results.push((
+                n_hidden_layers,
+                n_hidden_nodes,
+                dropout_rate,
+                learning_rate,
+                n_epochs,
+                f_patient_epochs,
+                n_batches,
+                activation.clone(),
+                cost.clone(),
+                optimiser.clone(),
+                result,
+            ));
+        }
+        // for n_hidden_layers in selection_hidden_layers.clone() {
+        //     for n_hidden_nodes in selection_hidden_layer_nodes.clone() {
+        //         for dropout_rate in selection_dropout_rates.clone() {
+        //             for learning_rate in selection_learning_rates.clone() {
+        //                 for n_epochs in selection_n_epochs.clone() {
+        //                     for f_patient_epochs in selection_f_patient_epochs.clone() {
+        //                         for n_batches in selection_n_batches.clone() {
+        //                             for activation in selection_activations.clone() {
+        //                                 for cost in selection_costs.clone() {
+        //                                     for optimiser in selection_optimisers.clone() {
+        //                                         // Create a new instance of the network with the current hyper-parameters
+        //                                         let mut network = Network::new(
+        //                                             &self.activations_per_layer[0].data.context().default_stream(),
+        //                                             self.activations_per_layer[0].clone(),
+        //                                             self.targets.clone(),
+        //                                             n_hidden_layers,
+        //                                             vec![n_hidden_nodes; n_hidden_layers],
+        //                                             vec![dropout_rate; n_hidden_layers],
+        //                                             self.seed,
+        //                                         )?;
+        //                                         network.activation = activation.clone();
+        //                                         network.cost = cost.clone();
+        //                                         let mut optimisation_parameters = OptimisationParameters::new(&network)?;
+        //                                         optimisation_parameters.learning_rate = learning_rate;
+        //                                         optimisation_parameters.n_epochs = n_epochs;
+        //                                         optimisation_parameters.f_patient_epochs = f_patient_epochs;
+        //                                         optimisation_parameters.n_batches = n_batches;
+        //                                         optimisation_parameters.optimiser = optimiser.clone();
+        //                                         // Train the network with the current hyper-parameters
+        //                                         let result = network.train(&optimisation_parameters, verbose);
+        //                                         // Store the result of the training
+        //                                         results.push((
+        //                                             n_hidden_layers,
+        //                                             n_hidden_nodes,
+        //                                             dropout_rate,
+        //                                             learning_rate,
+        //                                             n_epochs,
+        //                                             f_patient_epochs,
+        //                                             n_batches,
+        //                                             activation.clone(),
+        //                                             cost.clone(),
+        //                                             optimiser.clone(),
+        //                                             result,
+        //                                         ));
+        //                                     }
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // Print the results
+        println!("Hyper-parameter Optimisation Results:");
+        println!("| Hidden_Layers | Hidden_Nodes | Dropout_Rate | Learning_Rate | Epochs | Patient_Epochs | Batches | Activation | Cost | Optimiser | Final_Cost |");
+        for (n_hidden_layers, n_hidden_nodes, dropout_rate, learning_rate, n_epochs, f_patient_epochs, n_batches, activation, cost, optimiser, result) in results {
+            match result {
+                Ok(final_cost) => {
+                    println!("| {:13} | {:12} | {:12.4} | {:13.6} | {:6} | {:14} | {:7} | {:?} | {:?} | {:?} | {:10.6} |", n_hidden_layers, n_hidden_nodes, dropout_rate, learning_rate, n_epochs, f_patient_epochs, n_batches, activation, cost, optimiser, final_cost);
+                }
+                Err(e) => {
+                    println!("| {:13} | {:12} | {:12.4} | {:13.6} | {:6} | {:14} | {:7} | {:?} | {:?} | {:?} | Error: {} |", n_hidden_layers, n_hidden_nodes, dropout_rate, learning_rate, n_epochs, f_patient_epochs, n_batches, activation, cost, optimiser, e);
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -389,9 +625,34 @@ mod tests {
             a_host[a_host.len() - 1]
         );
         network.train_per_batch(&mut optimisation_parameters)?;
-        optimisation_parameters.n_epochs = 20;
+        optimisation_parameters.n_epochs = 5;
         optimisation_parameters.n_batches = 2;
         network.train(&mut optimisation_parameters, true)?;
+
+        // Hyper-parameter optimisations
+        let range_hidden_layers = Some((1, 2, 1));
+        let range_hidden_layer_nodes = Some((100, 100, 100));
+        let range_dropout_rate = Some((0.0, 0.0, 0.1));
+        let range_learning_rate = Some((0.0001, 0.0001, 0.0001));
+        let range_n_epochs = Some((10, 10, 10));
+        let range_f_patient_epochs = Some((0.5, 0.5, 0.5));
+        let range_n_batches = Some((2, 2, 2));
+        // let selection_activations = Some(vec![Activation::ReLU]);
+        // let selection_costs = Some(vec![Cost::MSE]);
+        // let selection_optimisers = Some(vec![Optimiser::Adam]);
+        network.hyperoptimise(
+            range_hidden_layers,
+            range_hidden_layer_nodes,
+            range_dropout_rate,
+            range_learning_rate,
+            range_n_epochs,
+            range_f_patient_epochs,
+            range_n_batches,
+            None,
+            None,
+            None,
+            true,
+        )?;
 
         Ok(())
     }

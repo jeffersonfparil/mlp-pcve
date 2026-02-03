@@ -126,7 +126,7 @@ impl Matrix {
     pub fn elementwisematadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_rows != b.n_rows) | (self.n_cols != b.n_cols) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
+                "in `elementwisematadd`: self.n_rows ({}) != b.n_rows ({}) and/or self.n_cols ({}) != b.n_cols ({})",
                 self.n_rows, b.n_rows, self.n_cols, b.n_cols
             ))));
         }
@@ -165,7 +165,7 @@ impl Matrix {
     pub fn rowmatadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_rows != b.n_rows) | (b.n_cols != 1) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
+                "in `rowmatadd`: self.n_rows ({}) != b.n_rows ({}) and/or b.n_cols ({}) != 1",
                 self.n_rows, b.n_rows, b.n_cols
             ))));
         }
@@ -204,7 +204,7 @@ impl Matrix {
     pub fn colmatadd(self: &Self, b: &Self) -> Result<Self, Box<dyn Error>> {
         if (self.n_cols != b.n_cols) | (b.n_rows != 1) {
             return Err(Box::new(MatrixError::DimensionMismatch(format!(
-                "Dimension mismatch: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
+                "in `colmatadd`: self.n_cols ({}) != b.n_cols ({}) and/or b.n_rows ({}) != 1",
                 self.n_cols, b.n_cols, b.n_rows
             ))));
         }

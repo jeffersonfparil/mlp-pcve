@@ -19,7 +19,7 @@ impl Matrix {
         let n = data.len();
         if n != n_rows * n_cols {
             return Err(MatrixError::DimensionMismatch(format!(
-                "Data length {} does not match matrix dimensions {}x{}={}",
+                "initialising matrix: Data length {} does not match matrix dimensions {}x{}={}",
                 n,
                 n_rows,
                 n_cols,
@@ -328,12 +328,12 @@ impl Error for MatrixError {}
 impl fmt::Display for MatrixError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MatrixError::DimensionMismatch(msg) => write!(f, "Dimension Mismatch: {}", msg),
-            MatrixError::TypeMismatch(msg) => write!(f, "Type Mismatch: {}", msg),
-            MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds: {}", msg),
-            MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
-            MatrixError::CompileError(msg) => write!(f, "Compiler Error: {}", msg),
-            MatrixError::OtherError(msg) => write!(f, "Other Error: {}", msg),
+            MatrixError::DimensionMismatch(msg) => write!(f, "Dimension Mismatch in {}", msg),
+            MatrixError::TypeMismatch(msg) => write!(f, "Type Mismatch in {}", msg),
+            MatrixError::OutOfBounds(msg) => write!(f, "Out of Bounds in {}", msg),
+            MatrixError::OutOfMemory(msg) => write!(f, "Out of Memory in {}", msg),
+            MatrixError::CompileError(msg) => write!(f, "Compiler Error in {}", msg),
+            MatrixError::OtherError(msg) => write!(f, "Other Error in {}", msg),
         }
     }
 }

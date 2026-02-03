@@ -1,6 +1,6 @@
 use crate::activations;
 use crate::costs;
-use crate::linalg::matrix::{Matrix, MatrixError};
+use crate::linalg::matrix::Matrix;
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
 use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
@@ -159,7 +159,99 @@ impl fmt::Display for Network {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum NetworkError {
+    DimensionMismatch(String),
+    OtherError(String),
+}
+
+/// Implement Error for NetworkError
+impl Error for NetworkError {}
+
+/// Implement std::fmt::Display for NetworkError
+impl fmt::Display for NetworkError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NetworkError::DimensionMismatch(msg) => write!(f, "Dimension Mismatch in Network: {}", msg),
+            NetworkError::OtherError(msg) => write!(f, "Other Error in Network: {}", msg),
+        }
+    }
+}
+
 impl Network {
+    pub fn check_dimensions(&self) -> Result<(), Box<dyn Error>> {
+        let n_observations: usize = self.targets.n_cols;
+        let n_input_nodes: usize = self.activations_per_layer[0].n_rows;
+        let n_output_nodes: usize = self.targets.n_rows;
+        if n_observations != self.predictions.n_cols {
+            return Err(Box::new(NetworkError::DimensionMismatch(
+                "We require the same number of observations for both predictions and target matrices."
+                    .to_string(),
+            )));
+        }
+        if n_input_nodes != self.activations_per_layer[0].n_rows {
+            return Err(Box::new(NetworkError::DimensionMismatch(
+                "Input nodes do not match the first layer of activations.".to_string(),
+            )));
+        }
+        if n_output_nodes != self.predictions.n_rows {
+            return Err(Box::new(NetworkError::DimensionMismatch(
+                "Output nodes do not match the predictions.".to_string(),
+            )));
+        }
+        for i in 1..self.activations_per_layer.len() {
+            // W_i * a_i + b_i = a_i+1
+            let weights_nrows = self.weights_per_layer[i - 1].n_rows;
+            let weights_ncols = self.weights_per_layer[i - 1].n_cols;
+            let activations_nrows = self.activations_per_layer[i - 1].n_rows;
+            let activations_ncols = self.activations_per_layer[i - 1].n_cols;
+            let biases_nrows = self.biases_per_layer[i - 1].n_rows;
+            let biases_ncols = self.biases_per_layer[i - 1].n_cols;
+            let activations_nrows_next = self.activations_per_layer[i].n_rows;
+            let activations_ncols_next = self.activations_per_layer[i].n_cols;
+            if weights_ncols != activations_nrows {
+                return Err(Box::new(NetworkError::DimensionMismatch(format!(
+                    "Weights matrix at layer {} has incompatible dimensions: expected {} columns to match {} rows of activations from previous layer.",
+                    i-1,
+                    weights_ncols,
+                    activations_nrows,
+                ))));
+            }
+            if weights_nrows != biases_nrows {
+                return Err(Box::new(NetworkError::DimensionMismatch(format!(
+                    "Weights matrix at layer {} has incompatible dimensions: expected {} rows to match {} rows of biases at the same layer.",
+                    i-1,
+                    weights_nrows,
+                    biases_nrows,
+                ))));
+            }
+            if activations_nrows_next != weights_nrows {
+                return Err(Box::new(NetworkError::DimensionMismatch(format!(
+                    "Activations matrix at layer {} has incompatible dimensions: expected {} rows to match {} rows of weights at previous layer.",
+                    i,
+                    activations_nrows_next,
+                    weights_nrows,
+                ))));
+            }
+            if activations_ncols_next != activations_ncols {
+                return Err(Box::new(NetworkError::DimensionMismatch(format!(
+                    "Activations matrix at layer {} has incompatible dimensions: expected {} columns to match {} columns of activations from previous layer.",
+                    i,
+                    activations_ncols_next,
+                    activations_ncols,
+                ))));
+            }
+            if biases_ncols != 1 {
+                return Err(Box::new(NetworkError::DimensionMismatch(format!(
+                    "Biases matrix at layer {} has incompatible dimensions: expected {} columns to be 1.",
+                    i-1,
+                    biases_ncols,
+                ))));
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(
         stream: &Arc<CudaStream>,
         input_data: Matrix,
@@ -173,35 +265,35 @@ impl Network {
         let n_input_nodes: usize = input_data.n_rows;
         let n_output_nodes: usize = output_data.n_rows;
         if n_observations != output_data.n_cols {
-            return Err(Box::new(MatrixError::DimensionMismatch(
+            return Err(Box::new(NetworkError::DimensionMismatch(
                 "We require the same number of observations for both input and output matrices."
                     .to_string(),
             )));
         }
         if n_observations < 1 {
-            return Err(Box::new(MatrixError::DimensionMismatch(
+            return Err(Box::new(NetworkError::OtherError(
                 "We require observations.".to_string(),
             )));
         }
         if n_input_nodes < 2 {
-            return Err(Box::new(MatrixError::DimensionMismatch(
+            return Err(Box::new(NetworkError::DimensionMismatch(
                 "We require at leat 2 input nodes.".to_string(),
             )));
         }
         if n_output_nodes < 1 {
-            return Err(Box::new(MatrixError::DimensionMismatch(
+            return Err(Box::new(NetworkError::DimensionMismatch(
                 "We require at leat 1 output nodes.".to_string(),
             )));
         }
         if n_hidden_layers != n_hidden_nodes.len() {
-            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+            return Err(Box::new(NetworkError::DimensionMismatch(format!(
                 "Number of hidden layers ({}) does not match the number of elements in the vector of number of nodes per hidden layer ({}).",
                 n_hidden_layers,
                 n_hidden_nodes.len(),
             ))));
         }
         if n_hidden_layers != dropout_rates.len() {
-            return Err(Box::new(MatrixError::DimensionMismatch(format!(
+            return Err(Box::new(NetworkError::DimensionMismatch(format!(
                 "Number of hidden layers ({}) does not match the number of elements in the vector of dropout rates per hidden layer ({}).",
                 n_hidden_layers,
                 dropout_rates.len(),
@@ -219,7 +311,8 @@ impl Network {
             tmp
         };
         let mut rng = ChaCha12Rng::seed_from_u64(seed as u64);
-        let normal = Normal::new(0.0, 1.0)?;
+        // let normal = Normal::new(0.0, 1.0)?;
+        let normal = Normal::new(0.0, 2.0/(n_input_nodes as f32))?;
         let predictions_dev: CudaSlice<f32> = stream.clone_htod(&predictions_host)?;
         let predictions: Matrix = Matrix::new(predictions_dev, n_output_nodes, n_observations)?;
         let mut weights_per_layer: Vec<Matrix> = vec![];
@@ -276,6 +369,7 @@ impl Network {
             cost: costs::Cost::MSE,
             seed: seed,
         };
+        out.check_dimensions()?;
         Ok(out)
     }
 
@@ -296,6 +390,7 @@ impl Network {
             self.dropout_rates.clone(),
             self.seed,
         )?;
+        network.check_dimensions()?;
         Ok(network)
     }
 }
@@ -330,6 +425,7 @@ mod tests {
             42,
         )?;
         println!("Network: {}", network);
+        assert_eq!(network.check_dimensions()?, ());
         // Update activation and cost functions
         network.activation = activations::Activation::Sigmoid;
         network.cost = costs::Cost::MAE;
