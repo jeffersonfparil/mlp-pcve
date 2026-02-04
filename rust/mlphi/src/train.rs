@@ -1,20 +1,20 @@
-use crate::linalg::matrix::Matrix;
 use crate::activations::Activation;
 use crate::costs::Cost;
+use crate::linalg::matrix::Matrix;
 use crate::network::Network;
 use crate::optimisers::{OptimisationParameters, Optimiser};
 use chrono::Utc;
 use cudarc::driver::CudaSlice;
 use rand::prelude::*;
 use rand_chacha::ChaCha12Rng;
+use rayon::prelude::*;
 use ruviz::core::{Plot, PlottingError};
 use ruviz::prelude::LegendPosition;
+use std::env::current_dir;
+use std::error::Error;
 use std::fmt;
 use std::ops::Add;
-use std::error::Error;
 use std::path::PathBuf;
-use std::env::current_dir;
-use rayon::prelude::*;
 use std::sync::Mutex;
 
 #[derive(Debug, PartialEq)]
@@ -31,7 +31,9 @@ impl Error for TrainingError {}
 impl fmt::Display for TrainingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TrainingError::BatchingError(msg) => write!(f, "Batching error during training: {}", msg),
+            TrainingError::BatchingError(msg) => {
+                write!(f, "Batching error during training: {}", msg)
+            }
             TrainingError::EpochError(msg) => write!(f, "Epoch error during training: {}", msg),
             TrainingError::OtherError(msg) => write!(f, "Other error during training: {}", msg),
         }
@@ -87,34 +89,48 @@ fn prep_all_hyperparams(
     selection_activations: Option<Vec<Activation>>,
     selection_costs: Option<Vec<Cost>>,
     selection_optimisers: Option<Vec<Optimiser>>,
-) -> Result<Vec<(usize, usize, f32, f32, usize, f32, usize, Activation, Cost, Optimiser)>, Box<dyn Error>> {
+) -> Result<
+    Vec<(
+        usize,
+        usize,
+        f32,
+        f32,
+        usize,
+        f32,
+        usize,
+        Activation,
+        Cost,
+        Optimiser,
+    )>,
+    Box<dyn Error>,
+> {
     let selection_hidden_layers: Vec<usize> = match range_hidden_layers {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((1, 3, 1))?
+        None => prep_each_hyperparam((1, 3, 1))?,
     };
     let selection_hidden_layer_nodes: Vec<usize> = match range_hidden_layer_nodes {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((100, 500, 100))?
+        None => prep_each_hyperparam((100, 500, 100))?,
     };
     let selection_dropout_rates: Vec<f32> = match range_dropout_rate {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((0.0, 0.5, 0.01))?
+        None => prep_each_hyperparam((0.0, 0.5, 0.01))?,
     };
     let selection_learning_rates: Vec<f32> = match range_learning_rate {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((1e-5, 1e-2, 1e-4))?
+        None => prep_each_hyperparam((1e-5, 1e-2, 1e-4))?,
     };
     let selection_n_epochs: Vec<usize> = match range_n_epochs {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((5, 10, 1))?
+        None => prep_each_hyperparam((5, 10, 1))?,
     };
     let selection_f_patient_epochs: Vec<f32> = match range_f_patient_epochs {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((0.5, 1.0, 0.5))?
+        None => prep_each_hyperparam((0.5, 1.0, 0.5))?,
     };
     let selection_n_batches: Vec<usize> = match range_n_batches {
         Some(x) => prep_each_hyperparam(x)?,
-        None => prep_each_hyperparam((1, 3, 1))?
+        None => prep_each_hyperparam((1, 3, 1))?,
     };
     let selection_activations: Vec<Activation> = match selection_activations {
         Some(x) => x,
@@ -126,9 +142,24 @@ fn prep_all_hyperparams(
     };
     let selection_optimisers: Vec<Optimiser> = match selection_optimisers {
         Some(x) => x,
-        None => vec![Optimiser::Adam, Optimiser::AdamMax, Optimiser::GradientDescent],
+        None => vec![
+            Optimiser::Adam,
+            Optimiser::AdamMax,
+            Optimiser::GradientDescent,
+        ],
     };
-    let mut param_combinations: Vec<(usize, usize, f32, f32, usize, f32, usize, Activation, Cost, Optimiser)> = Vec::new();
+    let mut param_combinations: Vec<(
+        usize,
+        usize,
+        f32,
+        f32,
+        usize,
+        f32,
+        usize,
+        Activation,
+        Cost,
+        Optimiser,
+    )> = Vec::new();
     for n_hidden_layers in &selection_hidden_layers {
         for n_hidden_nodes in &selection_hidden_layer_nodes {
             for dropout_rate in &selection_dropout_rates {
@@ -221,7 +252,9 @@ impl Network {
     ) -> Result<(Vec<f64>, Vec<f64>), Box<dyn Error>> {
         let mut epochs: Vec<f64> = Vec::new();
         let mut costs: Vec<f64> = Vec::new();
-        let n_patient_epochs = (optimisation_parameters.f_patient_epochs * optimisation_parameters.n_epochs as f32).ceil() as usize;
+        let n_patient_epochs = (optimisation_parameters.f_patient_epochs
+            * optimisation_parameters.n_epochs as f32)
+            .ceil() as usize;
         for epoch in 0..optimisation_parameters.n_epochs {
             self.forwardpass()?;
             self.backpropagation()?;
@@ -333,10 +366,7 @@ impl Network {
             // Update predictions using the merged parameters
             self.predict()?;
             // Return epochs, costs
-            (
-                epochs.into_inner().unwrap(),
-                costs.into_inner().unwrap(),
-            )
+            (epochs.into_inner().unwrap(), costs.into_inner().unwrap())
         };
         // Assess cost after training
         let final_cost = self.cost.cost(&self.predictions, &self.targets)?;
@@ -345,11 +375,12 @@ impl Network {
             // Plot loss curve
             let dir: PathBuf = current_dir()?;
             let fname_svg = &format!(
-                "{}/Loss_curve-{:?}-E{}-FPE{}-LR{}-{:?}-N{}-Time{}.svg",
+                "{}/Loss_curve-{:?}-E{}-FPE{}-LR{}-NB{}-{:?}-N{}-Time{}.svg",
                 dir.display(),
                 optimisation_parameters.optimiser,
                 optimisation_parameters.n_epochs,
                 optimisation_parameters.f_patient_epochs,
+                optimisation_parameters.n_batches,
                 optimisation_parameters.learning_rate,
                 self.activation,
                 self.n_hidden_layers,
@@ -360,16 +391,14 @@ impl Network {
                 " ({:?}; {:?})",
                 self.cost, optimisation_parameters.optimiser
             ));
-            let mut plot_vec = vec![
-                Plot::new()
-                    .title("Training Cost over Epochs")
-                    .legend_position(LegendPosition::Best)
-                    .xlabel("Epochs")
-                    .ylabel(&ylabel)
-                    .line(&epochs[0], &costs[0])
-                    .label("Batch 0")
-                    .size(4.0, 3.0),
-            ];
+            let mut plot_vec = vec![Plot::new()
+                .title("Training Cost over Epochs")
+                .legend_position(LegendPosition::Best)
+                .xlabel("Epochs")
+                .ylabel(&ylabel)
+                .line(&epochs[0], &costs[0])
+                .label("Batch 0")
+                .size(4.0, 3.0)];
             for i in 1..optimisation_parameters.n_batches {
                 plot_vec[0] = plot_vec[0]
                     .clone()
@@ -441,7 +470,10 @@ impl Network {
             ) = p;
             // Create a new instance of the network with the current hyper-parameters
             let mut network = Network::new(
-                &self.activations_per_layer[0].data.context().default_stream(),
+                &self.activations_per_layer[0]
+                    .data
+                    .context()
+                    .default_stream(),
                 self.activations_per_layer[0].clone(),
                 self.targets.clone(),
                 n_hidden_layers,
@@ -474,64 +506,23 @@ impl Network {
                 result,
             ));
         }
-        // for n_hidden_layers in selection_hidden_layers.clone() {
-        //     for n_hidden_nodes in selection_hidden_layer_nodes.clone() {
-        //         for dropout_rate in selection_dropout_rates.clone() {
-        //             for learning_rate in selection_learning_rates.clone() {
-        //                 for n_epochs in selection_n_epochs.clone() {
-        //                     for f_patient_epochs in selection_f_patient_epochs.clone() {
-        //                         for n_batches in selection_n_batches.clone() {
-        //                             for activation in selection_activations.clone() {
-        //                                 for cost in selection_costs.clone() {
-        //                                     for optimiser in selection_optimisers.clone() {
-        //                                         // Create a new instance of the network with the current hyper-parameters
-        //                                         let mut network = Network::new(
-        //                                             &self.activations_per_layer[0].data.context().default_stream(),
-        //                                             self.activations_per_layer[0].clone(),
-        //                                             self.targets.clone(),
-        //                                             n_hidden_layers,
-        //                                             vec![n_hidden_nodes; n_hidden_layers],
-        //                                             vec![dropout_rate; n_hidden_layers],
-        //                                             self.seed,
-        //                                         )?;
-        //                                         network.activation = activation.clone();
-        //                                         network.cost = cost.clone();
-        //                                         let mut optimisation_parameters = OptimisationParameters::new(&network)?;
-        //                                         optimisation_parameters.learning_rate = learning_rate;
-        //                                         optimisation_parameters.n_epochs = n_epochs;
-        //                                         optimisation_parameters.f_patient_epochs = f_patient_epochs;
-        //                                         optimisation_parameters.n_batches = n_batches;
-        //                                         optimisation_parameters.optimiser = optimiser.clone();
-        //                                         // Train the network with the current hyper-parameters
-        //                                         let result = network.train(&optimisation_parameters, verbose);
-        //                                         // Store the result of the training
-        //                                         results.push((
-        //                                             n_hidden_layers,
-        //                                             n_hidden_nodes,
-        //                                             dropout_rate,
-        //                                             learning_rate,
-        //                                             n_epochs,
-        //                                             f_patient_epochs,
-        //                                             n_batches,
-        //                                             activation.clone(),
-        //                                             cost.clone(),
-        //                                             optimiser.clone(),
-        //                                             result,
-        //                                         ));
-        //                                     }
-        //                                 }
-        //                             }
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
         // Print the results
         println!("Hyper-parameter Optimisation Results:");
         println!("| Hidden_Layers | Hidden_Nodes | Dropout_Rate | Learning_Rate | Epochs | Patient_Epochs | Batches | Activation | Cost | Optimiser | Final_Cost |");
-        for (n_hidden_layers, n_hidden_nodes, dropout_rate, learning_rate, n_epochs, f_patient_epochs, n_batches, activation, cost, optimiser, result) in results {
+        for (
+            n_hidden_layers,
+            n_hidden_nodes,
+            dropout_rate,
+            learning_rate,
+            n_epochs,
+            f_patient_epochs,
+            n_batches,
+            activation,
+            cost,
+            optimiser,
+            result,
+        ) in results
+        {
             match result {
                 Ok(final_cost) => {
                     println!("| {:13} | {:12} | {:12.4} | {:13.6} | {:6} | {:14} | {:7} | {:?} | {:?} | {:?} | {:10.6} |", n_hidden_layers, n_hidden_nodes, dropout_rate, learning_rate, n_epochs, f_patient_epochs, n_batches, activation, cost, optimiser, final_cost);
@@ -553,9 +544,9 @@ mod tests {
     fn test_train() -> Result<(), Box<dyn Error>> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
-        let n: usize = 10_123; // number of observations
-        let p: usize = 314; // number of input features
-        let k: usize = 1; // number of output features
+        let n: usize = 12_345; // number of observations
+        let p: usize = 12; // number of input features
+        let k: usize = 2; // number of output features
         let n_hidden_layers: usize = 2;
         let n_hidden_layer_nodes: usize = 5;
         let mut input_host: Vec<f32> = vec![0.0f32; p * n]; // p x n
@@ -631,15 +622,16 @@ mod tests {
 
         // Hyper-parameter optimisations
         let range_hidden_layers = Some((1, 2, 1));
-        let range_hidden_layer_nodes = Some((100, 100, 100));
+        let range_hidden_layer_nodes = Some((5, 5, 5));
         let range_dropout_rate = Some((0.0, 0.0, 0.1));
         let range_learning_rate = Some((0.0001, 0.0001, 0.0001));
-        let range_n_epochs = Some((10, 10, 10));
+        let range_n_epochs = Some((5, 10, 10));
         let range_f_patient_epochs = Some((0.5, 0.5, 0.5));
-        let range_n_batches = Some((2, 2, 2));
-        // let selection_activations = Some(vec![Activation::ReLU]);
-        // let selection_costs = Some(vec![Cost::MSE]);
-        // let selection_optimisers = Some(vec![Optimiser::Adam]);
+        let range_n_batches = Some((1, 2, 1));
+        let selection_activations = Some(vec![Activation::ReLU]);
+        let selection_costs = Some(vec![Cost::MSE]);
+        let selection_optimisers = Some(vec![Optimiser::Adam, Optimiser::GradientDescent]);
+        let verbose = true;
         network.hyperoptimise(
             range_hidden_layers,
             range_hidden_layer_nodes,
@@ -648,10 +640,10 @@ mod tests {
             range_n_epochs,
             range_f_patient_epochs,
             range_n_batches,
-            None,
-            None,
-            None,
-            true,
+            selection_activations,
+            selection_costs,
+            selection_optimisers,
+            verbose,
         )?;
 
         Ok(())

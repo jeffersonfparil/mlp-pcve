@@ -11,5 +11,8 @@ mod optimisers;
 mod train;
 
 fn main() -> Result<(), DriverError> {
+    // TODO: move to its own repo please...
+    // TODO: UI... clap again or is there a better alternative?
+
     Ok(())
 }
